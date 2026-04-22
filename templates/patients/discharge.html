@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+
+{% block title %}Xác nhận xuất viện{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <h2 class="fw-bold mb-4">
+            <i class="bi bi-box-arrow-right text-success"></i> Xác nhận xuất viện
+        </h2>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Bệnh nhân:</strong> {{ patient.patient_name }}</p>
+                        <p><strong>Mã EID:</strong> <code>{{ patient.patient_id }}</code></p>
+                        <p><strong>CCCD:</strong> {{ patient.cccd|default:"—" }}</p>
+                        <p><strong>Ngày nhập viện:</strong> {{ patient.admission_date|date:"d/m/Y H:i" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>LOS dự đoán:</strong> {{ patient.predicted_los }} ngày</p>
+                        <p><strong>Ngày dự kiến xuất viện:</strong> {{ patient.predicted_discharge_date|date:"d/m/Y" }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <form method="post" id="discharge-form">
+                    {% csrf_token %}
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Ngày giờ xuất viện <span class="text-danger">*</span></label>
+                            <input type="datetime-local" name="discharge_date" id="discharge-date-input"
+                                   class="form-control" required>
+                            <div id="discharge-date-error" class="invalid-feedback"></div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Tình trạng ra viện <span class="text-danger">*</span></label>
+                            <select name="discharge_status" class="form-select" required>
+                                <option value="recovered">Khỏi bệnh</option>
+                                <option value="transferred">Chuyển viện</option>
+                                <option value="self_discharge">Xin về</option>
+                                <option value="deceased">Tử vong</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="bi bi-check-lg"></i> Xác nhận xuất viện
+                        </button>
+                        <a href="{% url 'patients:detail' patient.id_str %}" class="btn btn-outline-secondary btn-lg ms-2">Hủy</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const dateInput = document.getElementById('discharge-date-input');
+    const dateError = document.getElementById('discharge-date-error');
+    const admissionDateRaw = '{{ patient.admission_date|date:"Y-m-d\\TH:i" }}';
+
+    function setMaxNow() {
+        const now = new Date();
+        const pad = function (n) { return n < 10 ? '0' + n : n; };
+        const maxVal = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' +
+            pad(now.getDate()) + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+        dateInput.setAttribute('max', maxVal);
+    }
+
+    if (admissionDateRaw) {
+        dateInput.setAttribute('min', admissionDateRaw);
+    }
+
+    setMaxNow();
+    setInterval(setMaxNow, 60000);
+
+    function validateDischargeDate() {
+        const val = dateInput.value;
+        if (!val) {
+            dateInput.classList.remove('is-invalid', 'is-valid');
+            dateError.textContent = '';
+            return true;
+        }
+
+        const chosen = new Date(val);
+        const now = new Date();
+
+        if (chosen > now) {
+            dateInput.classList.add('is-invalid');
+            dateInput.classList.remove('is-valid');
+            dateError.textContent = 'Ngày xuất viện không được chọn thời điểm ở tương lai.';
+            return false;
+        }
+
+        if (admissionDateRaw) {
+            const admission = new Date(admissionDateRaw);
+            if (chosen < admission) {
+                dateInput.classList.add('is-invalid');
+                dateInput.classList.remove('is-valid');
+                dateError.textContent = 'Ngày xuất viện phải lớn hơn hoặc bằng ngày nhập viện.';
+                return false;
+            }
+        }
+
+        dateInput.classList.remove('is-invalid');
+        dateInput.classList.add('is-valid');
+        dateError.textContent = '';
+        return true;
+    }
+
+    dateInput.addEventListener('change', validateDischargeDate);
+    dateInput.addEventListener('input', validateDischargeDate);
+
+    document.getElementById('discharge-form').addEventListener('submit', function (e) {
+        if (!validateDischargeDate()) {
+            e.preventDefault();
+            dateInput.focus();
+        }
+    });
+})();
+</script>
+{% endblock %}

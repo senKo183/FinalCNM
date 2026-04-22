@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+
+{% block title %}Chi tiết bệnh nhân{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="fw-bold mb-0">
+                <i class="bi bi-person-vcard text-primary"></i>
+                {{ patient.patient_name|default:"Bệnh nhân" }}
+                <small class="text-muted fs-6">#{{ patient.patient_id }}</small>
+            </h2>
+            <div>
+                {% if patient.status == 'admitted' %}
+                <a href="{% url 'patients:edit' patient.id_str %}" class="btn btn-warning">
+                    <i class="bi bi-pencil-square"></i> Chỉnh sửa
+                </a>
+                <a href="{% url 'patients:discharge' patient.id_str %}" class="btn btn-success">
+                    <i class="bi bi-box-arrow-right"></i> Xác nhận xuất viện
+                </a>
+                {% endif %}
+                <a href="{% url 'patients:list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Quay lại
+                </a>
+            </div>
+        </div>
+
+        <!-- Trạng thái tổng quan -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm text-center">
+                    <div class="card-body">
+                        <div class="fs-5 fw-bold text-primary">
+                            {% if patient.status == 'admitted' %}Đang nằm viện{% else %}Đã xuất viện{% endif %}
+                        </div>
+                        <small class="text-muted">Trạng thái</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm text-center">
+                    <div class="card-body">
+                        <div class="fs-5 fw-bold text-info">{{ patient.predicted_los }} ngày</div>
+                        <small class="text-muted">LOS dự đoán</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm text-center">
+                    <div class="card-body">
+                        <div class="fs-5 fw-bold">{{ patient.days_admitted }} ngày</div>
+                        <small class="text-muted">Đã nằm viện</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm text-center">
+                    <div class="card-body">
+                        {% if patient.alert_level == 'danger' %}
+                        <div class="fs-5 fw-bold text-danger"><i class="bi bi-exclamation-triangle"></i> Quá hạn</div>
+                        {% elif patient.alert_level == 'warning' %}
+                        <div class="fs-5 fw-bold text-warning"><i class="bi bi-exclamation-circle"></i> Sắp hạn</div>
+                        {% else %}
+                        <div class="fs-5 fw-bold text-success"><i class="bi bi-check-circle"></i> Bình thường</div>
+                        {% endif %}
+                        <small class="text-muted">Cảnh báo</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Thông tin chi tiết -->
+        <div class="row g-4">
+            <div class="col-md-6">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-primary text-white fw-semibold">
+                        <i class="bi bi-info-circle"></i> Thông tin hành chính
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-borderless mb-0">
+                            <tr><td class="fw-semibold w-50">Mã EID</td><td><code>{{ patient.patient_id }}</code></td></tr>
+                            <tr><td class="fw-semibold">Họ tên</td><td>{{ patient.patient_name }}</td></tr>
+                            <tr><td class="fw-semibold">Số CCCD</td><td>{{ patient.cccd|default:"—" }}</td></tr>
+                            <tr><td class="fw-semibold">Ngày sinh</td><td>{{ patient.date_of_birth|date:"d/m/Y"|default:"—" }}</td></tr>
+                            <tr><td class="fw-semibold">Số điện thoại</td><td>{{ patient.phone|default:"—" }}</td></tr>
+                            <tr><td class="fw-semibold">Giới tính</td><td>{% if patient.gender == 'M' %}Nam{% elif patient.gender == 'F' %}Nữ{% else %}{{ patient.gender }}{% endif %}</td></tr>
+                            <tr><td class="fw-semibold">Cơ sở y tế</td><td>Cơ sở {{ patient.facid }}</td></tr>
+                            <tr><td class="fw-semibold">Ngày nhập viện</td><td>{{ patient.admission_date|date:"d/m/Y H:i" }}</td></tr>
+                            <tr><td class="fw-semibold">Số lần tái nhập viện</td><td>{{ patient.features.rcount }}</td></tr>
+                            <tr><td class="fw-semibold">Model version</td><td>{{ patient.model_version_used }}</td></tr>
+                            <tr><td class="fw-semibold">Ngày dự kiến xuất viện</td><td>{{ patient.predicted_discharge_date|date:"d/m/Y" }}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-info text-white fw-semibold">
+                        <i class="bi bi-activity"></i> Chỉ số xét nghiệm
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-borderless mb-0">
+                            <tr><td class="fw-semibold w-50">BMI</td><td>{{ patient.features.bmi }}</td></tr>
+                            <tr><td class="fw-semibold">Hematocrit</td><td>{{ patient.features.hematocrit }}</td></tr>
+                            <tr><td class="fw-semibold">Neutrophils</td><td>{{ patient.features.neutrophils }}</td></tr>
+                            <tr><td class="fw-semibold">Sodium</td><td>{{ patient.features.sodium }}</td></tr>
+                            <tr><td class="fw-semibold">Glucose</td><td>{{ patient.features.glucose }}</td></tr>
+                            <tr><td class="fw-semibold">BUN</td><td>{{ patient.features.bloodureanitro }}</td></tr>
+                            <tr><td class="fw-semibold">Creatinine</td><td>{{ patient.features.creatinine }}</td></tr>
+                            <tr><td class="fw-semibold">Pulse</td><td>{{ patient.features.pulse }}</td></tr>
+                            <tr><td class="fw-semibold">Respiration</td><td>{{ patient.features.respiration }}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bệnh lý kèm theo -->
+            <div class="col-md-6">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-warning text-dark fw-semibold">
+                        <i class="bi bi-bandaid"></i> Bệnh lý kèm theo
+                    </div>
+                    <div class="card-body">
+                        {% for field_name, label in comorbidity_fields %}
+                        <div class="d-flex justify-content-between py-1">
+                            <span>{{ label }}</span>
+                            {% if patient.features %}
+                            {% with val=patient.features %}
+                            <span class="badge {% if val|default_if_none:0 %}bg-danger{% else %}bg-secondary{% endif %}">
+                                {% if field_name == 'dialysisrenalendstage' and val.dialysisrenalendstage %}Có{% elif field_name == 'asthma' and val.asthma %}Có{% elif field_name == 'irondef' and val.irondef %}Có{% elif field_name == 'pneum' and val.pneum %}Có{% elif field_name == 'substancedependence' and val.substancedependence %}Có{% elif field_name == 'psychologicaldisordermajor' and val.psychologicaldisordermajor %}Có{% elif field_name == 'depress' and val.depress %}Có{% elif field_name == 'psychother' and val.psychother %}Có{% elif field_name == 'fibrosisandother' and val.fibrosisandother %}Có{% elif field_name == 'malnutrition' and val.malnutrition %}Có{% elif field_name == 'hemo' and val.hemo %}Có{% else %}Không{% endif %}
+                            </span>
+                            {% endwith %}
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                        <div class="d-flex justify-content-between py-1 mt-2 border-top">
+                            <span class="fw-semibold">Chẩn đoán phụ ngoài ICD-9</span>
+                            <span class="badge bg-info">{{ patient.features.secondarydiagnosisnonicd9|default:0 }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Thông tin xuất viện (nếu đã xuất viện) -->
+            {% if patient.status == 'discharged' %}
+            <div class="col-md-6">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-success text-white fw-semibold">
+                        <i class="bi bi-check-circle"></i> Thông tin xuất viện
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-borderless mb-0">
+                            <tr><td class="fw-semibold w-50">Ngày xuất viện</td><td>{{ patient.discharge_date|date:"d/m/Y H:i" }}</td></tr>
+                            <tr><td class="fw-semibold">Tình trạng</td><td>{{ patient.discharge_status }}</td></tr>
+                            <tr><td class="fw-semibold">LOS thực tế</td><td>{{ patient.actual_los }} ngày</td></tr>
+                            <tr><td class="fw-semibold">LOS dự đoán</td><td>{{ patient.predicted_los }} ngày</td></tr>
+                            <tr>
+                                <td class="fw-semibold">Sai lệch</td>
+                                <td>
+                                    <span class="{% if patient.prediction_error > 1 %}text-danger{% elif patient.prediction_error < -1 %}text-info{% else %}text-success{% endif %} fw-bold">
+                                        {{ patient.prediction_error }} ngày
+                                    </span>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

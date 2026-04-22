@@ -1,0 +1,20 @@
+import os
+from celery import Celery
+from celery.schedules import crontab
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'PredictLOSWeb.settings')
+
+app = Celery('PredictLOSWeb')
+app.config_from_object('django.conf:settings', namespace='CELERY')
+app.autodiscover_tasks()
+
+app.conf.beat_schedule = {
+    'daily-patient-alert-scan': {
+        'task': 'ml_engine.tasks.daily_alert_scan',
+        'schedule': crontab(hour=6, minute=0),
+    },
+    'check-retrain-conditions': {
+        'task': 'ml_engine.tasks.check_retrain_conditions',
+        'schedule': crontab(hour=7, minute=0),
+    },
+}

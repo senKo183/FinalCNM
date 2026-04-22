@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+
+{% block title %}Hồ sơ cá nhân{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="d-flex align-items-center mb-4">
+            <h2 class="fw-bold mb-0"><i class="bi bi-person-circle text-primary"></i> Hồ sơ cá nhân</h2>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Họ</label>
+                            <input type="text" name="last_name" class="form-control" value="{{ user.last_name }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Tên</label>
+                            <input type="text" name="first_name" class="form-control" value="{{ user.first_name }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Email</label>
+                            <input type="email" name="email" class="form-control" value="{{ user.email }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Số điện thoại</label>
+                            <input type="text" name="phone" class="form-control" value="{{ user.phone }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Khoa / Phòng ban</label>
+                            <input type="text" name="department" class="form-control" value="{{ user.department }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Vai trò</label>
+                            <input type="text" class="form-control" value="{{ user.get_role_display }}" disabled>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Tên đăng nhập</label>
+                            <input type="text" class="form-control" value="{{ user.username }}" disabled>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Ngày tham gia</label>
+                            <input type="text" class="form-control" value="{{ user.date_joined|date:'d/m/Y' }}" disabled>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Lưu thay đổi
+                        </button>
+                        <a href="{% url 'accounts:change_password' %}" class="btn btn-outline-secondary ms-2">
+                            <i class="bi bi-key"></i> Đổi mật khẩu
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

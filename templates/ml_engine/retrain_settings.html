@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+
+{% block title %}Cấu hình Retrain{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <h2 class="fw-bold mb-4">
+            <i class="bi bi-gear text-primary"></i> Cấu hình tự động Retrain
+        </h2>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-primary text-white fw-semibold">
+                <i class="bi bi-sliders"></i> Tham số cấu hình
+            </div>
+            <div class="card-body p-4">
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">
+                                Ngưỡng số mẫu kích hoạt retrain
+                                <span class="text-danger">*</span>
+                            </label>
+                            <input type="number" name="retrain_threshold" class="form-control"
+                                   value="{{ config.retrain_threshold }}" min="1" required>
+                            <div class="form-text">
+                                Số mẫu mới tối thiểu trong buffer để tự động retrain.
+                                Mặc định: 10.
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">
+                                Thời gian chờ tối đa (ngày)
+                                <span class="text-danger">*</span>
+                            </label>
+                            <input type="number" name="retrain_interval_days" class="form-control"
+                                   value="{{ config.retrain_interval_days }}" min="1" required>
+                            <div class="form-text">
+                                Retrain dù chưa đủ mẫu nếu đã qua số ngày này.
+                                Mặc định: 7.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Lưu cấu hình
+                        </button>
+                        <a href="{% url 'ml_engine:versions' %}" class="btn btn-outline-secondary ms-2">Quay lại</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Trạng thái hiện tại -->
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-info text-white fw-semibold">
+                <i class="bi bi-info-circle"></i> Trạng thái hiện tại
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <td class="fw-semibold w-50">Mẫu đang chờ trong buffer</td>
+                        <td><span class="badge bg-primary fs-6">{{ pending_count }}</span></td>
+                    </tr>
+                    <tr>
+                        <td class="fw-semibold">Ngưỡng hiện tại</td>
+                        <td>{{ config.retrain_threshold }} mẫu</td>
+                    </tr>
+                    <tr>
+                        <td class="fw-semibold">Thời gian chờ hiện tại</td>
+                        <td>{{ config.retrain_interval_days }} ngày</td>
+                    </tr>
+                    {% if config.updated_by %}
+                    <tr>
+                        <td class="fw-semibold">Cập nhật lần cuối bởi</td>
+                        <td>{{ config.updated_by }} — {{ config.updated_at|date:"d/m/Y H:i" }}</td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+
+        <!-- Gợi ý -->
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-warning text-dark fw-semibold">
+                <i class="bi bi-lightbulb"></i> Gợi ý điều chỉnh ngưỡng
+            </div>
+            <div class="card-body">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Tổng số bản ghi trong DB</th>
+                            <th>Ngưỡng đề xuất</th>
+                            <th>Lý do</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Dưới 500</td>
+                            <td>10 mẫu</td>
+                            <td>Dữ liệu ít, retrain nhanh, nên cập nhật thường xuyên</td>
+                        </tr>
+                        <tr>
+                            <td>500 — 2.000</td>
+                            <td>20 — 30 mẫu</td>
+                            <td>Cân bằng giữa tần suất và tốc độ</td>
+                        </tr>
+                        <tr>
+                            <td>Trên 2.000</td>
+                            <td>50+ mẫu</td>
+                            <td>Dữ liệu lớn, mỗi lần retrain tốn thời gian, nên giảm tần suất</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

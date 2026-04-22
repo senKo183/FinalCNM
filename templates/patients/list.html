@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+
+{% block title %}Danh sách bệnh nhân{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0"><i class="bi bi-people text-primary"></i> Danh sách bệnh nhân</h2>
+    <a href="{% url 'patients:create' %}" class="btn btn-primary">
+        <i class="bi bi-plus-lg"></i> Nhập viện mới
+    </a>
+</div>
+
+<!-- Bộ lọc -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Trạng thái</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">Tất cả</option>
+                    <option value="admitted" {% if status_filter == 'admitted' %}selected{% endif %}>Đang nằm viện</option>
+                    <option value="discharged" {% if status_filter == 'discharged' %}selected{% endif %}>Đã xuất viện</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Cơ sở y tế</label>
+                <select name="facid" class="form-select form-select-sm">
+                    <option value="">Tất cả</option>
+                    {% for f in facility_choices %}
+                    <option value="{{ f }}" {% if facid_filter == f %}selected{% endif %}>{{ f }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Cảnh báo</label>
+                <select name="alert" class="form-select form-select-sm">
+                    <option value="">Tất cả</option>
+                    <option value="warning" {% if alert_filter == 'warning' %}selected{% endif %}>Sắp đến hạn</option>
+                    <option value="danger" {% if alert_filter == 'danger' %}selected{% endif %}>Quá hạn</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Tìm kiếm</label>
+                <input type="text" name="search" class="form-control form-control-sm" placeholder="Mã EID, tên, CCCD..." value="{{ search }}">
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search"></i> Lọc</button>
+                <a href="{% url 'patients:list' %}" class="btn btn-sm btn-outline-secondary">Xóa lọc</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Danh sách -->
+<div class="card shadow-sm border-0">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Mã EID</th>
+                    <th>Tên bệnh nhân</th>
+                    <th>CCCD</th>
+                    <th>Cơ sở</th>
+                    <th>Ngày nhập viện</th>
+                    <th class="text-center">Số ngày nằm</th>
+                    <th class="text-center">LOS dự đoán</th>
+                    <th class="text-center">Còn lại</th>
+                    <th>Trạng thái</th>
+                    <th>Cảnh báo</th>
+                    <th class="text-center">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in patients %}
+                <tr class="{% if p.alert_level == 'danger' %}table-danger{% elif p.alert_level == 'warning' %}table-warning{% endif %}">
+                    <td class="fw-semibold"><code>{{ p.patient_id|default:"-" }}</code></td>
+                    <td>{{ p.patient_name|default:"-" }}</td>
+                    <td class="text-muted small">{{ p.cccd|default:"-" }}</td>
+                    <td>{{ p.facid }}</td>
+                    <td>{{ p.admission_date|date:"d/m/Y H:i" }}</td>
+                    <td class="text-center">{{ p.days_admitted }} ngày</td>
+                    <td class="text-center">{{ p.predicted_los }} ngày</td>
+                    <td class="text-center">
+                        {% if p.status == 'discharged' %}
+                        <span class="text-muted">—</span>
+                        {% elif p.days_remaining is not None %}
+                        {{ p.days_remaining }} ngày
+                        {% else %}
+                        —
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if p.status == 'admitted' %}
+                        <span class="badge bg-primary">Đang nằm viện</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Đã xuất viện</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if p.alert_level == 'danger' %}
+                        <span class="badge bg-danger"><i class="bi bi-exclamation-triangle"></i> Quá hạn</span>
+                        {% elif p.alert_level == 'warning' %}
+                        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-circle"></i> Sắp đến hạn</span>
+                        {% else %}
+                        <span class="badge bg-success">Bình thường</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        <a href="{% url 'patients:detail' p.id_str %}" class="btn btn-sm btn-outline-primary" title="Xem">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        {% if p.status == 'admitted' %}
+                        <a href="{% url 'patients:discharge' p.id_str %}" class="btn btn-sm btn-outline-success" title="Xuất viện">
+                            <i class="bi bi-box-arrow-right"></i>
+                        </a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="12" class="text-center text-muted py-5">
+                        <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                        Chưa có hồ sơ bệnh nhân nào.
+                        <br><a href="{% url 'patients:create' %}" class="mt-2 d-inline-block">Tạo hồ sơ mới</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+
+{% block title %}Tạo tài khoản{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <h2 class="fw-bold mb-4"><i class="bi bi-person-plus text-primary"></i> Tạo tài khoản mới</h2>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Tên đăng nhập <span class="text-danger">*</span></label>
+                            <input type="text" name="username" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Mật khẩu <span class="text-danger">*</span></label>
+                            <input type="password" name="password" class="form-control" required minlength="8">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Họ</label>
+                            <input type="text" name="last_name" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Tên</label>
+                            <input type="text" name="first_name" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Email</label>
+                            <input type="email" name="email" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Vai trò</label>
+                            <select name="role" class="form-select">
+                                <option value="doctor">Bác sĩ / Y tá</option>
+                                <option value="admin">Quản trị viên</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Số điện thoại</label>
+                            <input type="text" name="phone" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Khoa / Phòng ban</label>
+                            <input type="text" name="department" class="form-control">
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Tạo tài khoản
+                        </button>
+                        <a href="{% url 'accounts:manage_users' %}" class="btn btn-outline-secondary ms-2">Hủy</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

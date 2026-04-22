@@ -1,0 +1,245 @@
+{% extends 'base.html' %}
+
+{% block title %}Chỉnh sửa hồ sơ{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <h2 class="fw-bold mb-4">
+            <i class="bi bi-pencil-square text-primary"></i> Chỉnh sửa hồ sơ
+            <small class="text-muted fs-6">#{{ patient.patient_id }}</small>
+        </h2>
+
+        <form method="post" id="edit-form">
+            {% csrf_token %}
+
+            <!-- Thông tin hành chính -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-primary text-white fw-semibold">
+                    <i class="bi bi-clipboard2-pulse"></i> Thông tin hành chính
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Mã EID</label>
+                            <input type="text" class="form-control" value="{{ patient.patient_id }}" readonly disabled>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Số CCCD</label>
+                            <input type="text" class="form-control" value="{{ patient.cccd|default:'' }}" readonly disabled>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Ngày giờ nhập viện</label>
+                            <input type="text" class="form-control" value="{{ patient.admission_date|date:'d/m/Y H:i' }}" readonly disabled>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Họ và tên <span class="text-danger">*</span></label>
+                            <input type="text" name="patient_name" class="form-control" required
+                                   value="{{ patient.patient_name }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Ngày sinh</label>
+                            <input type="date" name="date_of_birth" class="form-control"
+                                   value="{{ patient.date_of_birth|date:'Y-m-d' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Số điện thoại</label>
+                            <input type="tel" name="phone" id="phone-input" class="form-control"
+                                   value="{{ patient.phone|default:'' }}" placeholder="VD: 0901234567"
+                                   pattern="0\d{9}" maxlength="10">
+                            <div id="phone-error" class="invalid-feedback"></div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Mã cơ sở y tế</label>
+                            <select name="facid" class="form-select">
+                                {% for f in facility_choices %}
+                                <option value="{{ f }}" {% if patient.facid == f %}selected{% endif %}>Cơ sở {{ f }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Số lần tái nhập viện (rcount)</label>
+                            <input type="number" class="form-control" value="{{ patient.features.rcount|default:0 }}" readonly disabled>
+                            <div class="form-text text-muted">Không thể chỉnh sửa</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">LOS dự đoán hiện tại</label>
+                            <input type="text" class="form-control" value="{{ patient.predicted_los }} ngày" readonly disabled>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chỉ số xét nghiệm -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-info text-white fw-semibold">
+                    <i class="bi bi-activity"></i> Chỉ số cơ bản & xét nghiệm
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info small mb-3">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        Nếu bạn thay đổi bất kỳ chỉ số nào bên dưới, hệ thống sẽ tự động chạy lại dự đoán LOS.
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">BMI</label>
+                            <input type="number" step="0.01" name="bmi" class="form-control"
+                                   value="{{ patient.features.bmi }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Hematocrit (%)</label>
+                            <input type="number" step="0.01" name="hematocrit" class="form-control"
+                                   value="{{ patient.features.hematocrit }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Bạch cầu trung tính (Neutrophils)</label>
+                            <input type="number" step="0.01" name="neutrophils" class="form-control"
+                                   value="{{ patient.features.neutrophils }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Natri (Sodium) mEq/L</label>
+                            <input type="number" step="0.01" name="sodium" class="form-control"
+                                   value="{{ patient.features.sodium }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Glucose mg/dL</label>
+                            <input type="number" step="0.01" name="glucose" class="form-control"
+                                   value="{{ patient.features.glucose }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">BUN (Blood Urea Nitrogen)</label>
+                            <input type="number" step="0.01" name="bloodureanitro" class="form-control"
+                                   value="{{ patient.features.bloodureanitro }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Creatinine mg/dL</label>
+                            <input type="number" step="0.01" name="creatinine" class="form-control"
+                                   value="{{ patient.features.creatinine }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Mạch (Pulse) bpm</label>
+                            <input type="number" step="0.1" name="pulse" class="form-control"
+                                   value="{{ patient.features.pulse }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Nhịp thở (Respiration)</label>
+                            <input type="number" step="0.1" name="respiration" class="form-control"
+                                   value="{{ patient.features.respiration }}">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bệnh lý kèm theo -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-warning text-dark fw-semibold">
+                    <i class="bi bi-bandaid"></i> Bệnh lý kèm theo
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        {% for field_name, label in comorbidity_fields %}
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="{{ field_name }}"
+                                       id="{{ field_name }}" value="1"
+                                       {% if patient.features %}{% with val=patient.features %}{% if field_name == 'dialysisrenalendstage' and val.dialysisrenalendstage %}checked{% elif field_name == 'asthma' and val.asthma %}checked{% elif field_name == 'irondef' and val.irondef %}checked{% elif field_name == 'pneum' and val.pneum %}checked{% elif field_name == 'substancedependence' and val.substancedependence %}checked{% elif field_name == 'psychologicaldisordermajor' and val.psychologicaldisordermajor %}checked{% elif field_name == 'depress' and val.depress %}checked{% elif field_name == 'psychother' and val.psychother %}checked{% elif field_name == 'fibrosisandother' and val.fibrosisandother %}checked{% elif field_name == 'malnutrition' and val.malnutrition %}checked{% elif field_name == 'hemo' and val.hemo %}checked{% endif %}{% endwith %}{% endif %}>
+                                <label class="form-check-label" for="{{ field_name }}">{{ label }}</label>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Chẩn đoán phụ ngoài ICD-9 <span class="text-danger">*</span></label>
+                            <input type="number" name="secondarydiagnosisnonicd9" id="secondarydiag-input"
+                                   class="form-control" value="{{ patient.features.secondarydiagnosisnonicd9|default:0 }}"
+                                   min="0" max="10" step="1" required>
+                            <div id="secondarydiag-error" class="invalid-feedback"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary btn-lg" id="submit-btn">
+                    <i class="bi bi-check-lg"></i> Lưu thay đổi
+                </button>
+                <a href="{% url 'patients:detail' patient.id_str %}" class="btn btn-outline-secondary btn-lg">Hủy</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var phoneInput = document.getElementById('phone-input');
+    var phoneError = document.getElementById('phone-error');
+
+    function validatePhone() {
+        var val = phoneInput.value.trim();
+        if (!val) {
+            phoneInput.classList.remove('is-invalid', 'is-valid');
+            phoneError.textContent = '';
+            return true;
+        }
+        if (!/^0\d{9}$/.test(val)) {
+            phoneInput.classList.add('is-invalid');
+            phoneInput.classList.remove('is-valid');
+            if (val.length !== 10) {
+                phoneError.textContent = 'Số điện thoại phải có đúng 10 chữ số.';
+            } else if (val[0] !== '0') {
+                phoneError.textContent = 'Số điện thoại phải bắt đầu bằng số 0.';
+            } else {
+                phoneError.textContent = 'Số điện thoại chỉ được chứa chữ số.';
+            }
+            return false;
+        }
+        phoneInput.classList.remove('is-invalid');
+        phoneInput.classList.add('is-valid');
+        phoneError.textContent = '';
+        return true;
+    }
+
+    phoneInput.addEventListener('input', validatePhone);
+    phoneInput.addEventListener('blur', validatePhone);
+
+    var diagInput = document.getElementById('secondarydiag-input');
+    var diagError = document.getElementById('secondarydiag-error');
+
+    function validateDiag() {
+        var raw = diagInput.value.trim();
+        if (raw === '') {
+            diagInput.classList.add('is-invalid');
+            diagError.textContent = 'Trường này là bắt buộc.';
+            return false;
+        }
+        var num = Number(raw);
+        if (!Number.isInteger(num) || num < 0 || num > 10) {
+            diagInput.classList.add('is-invalid');
+            diagError.textContent = 'Phải là số nguyên từ 0 đến 10.';
+            return false;
+        }
+        diagInput.classList.remove('is-invalid');
+        diagInput.classList.add('is-valid');
+        diagError.textContent = '';
+        return true;
+    }
+
+    diagInput.addEventListener('input', validateDiag);
+    diagInput.addEventListener('blur', validateDiag);
+
+    document.getElementById('edit-form').addEventListener('submit', function (e) {
+        var valid = true;
+        if (!validatePhone()) valid = false;
+        if (!validateDiag()) valid = false;
+        if (!valid) {
+            e.preventDefault();
+            return;
+        }
+        if (!confirm('Bạn có chắc muốn lưu thay đổi? Nếu các chỉ số xét nghiệm hoặc bệnh lý thay đổi, kết quả dự đoán LOS sẽ được tính lại.')) {
+            e.preventDefault();
+        }
+    });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,258 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<h2 class="fw-bold mb-4"><i class="bi bi-speedometer2 text-primary"></i> Dashboard</h2>
+
+<!-- Thống kê tức thời -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex align-items-center">
+                <div class="bg-primary bg-opacity-10 rounded-3 p-3 me-3">
+                    <i class="bi bi-hospital fs-3 text-primary"></i>
+                </div>
+                <div>
+                    <div class="fs-3 fw-bold text-primary">{{ total_admitted }}</div>
+                    <small class="text-muted">Đang nằm viện</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex align-items-center">
+                <div class="bg-success bg-opacity-10 rounded-3 p-3 me-3">
+                    <i class="bi bi-box-arrow-right fs-3 text-success"></i>
+                </div>
+                <div>
+                    <div class="fs-3 fw-bold text-success">{{ discharged_today }}</div>
+                    <small class="text-muted">Xuất viện hôm nay</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex align-items-center">
+                <div class="bg-danger bg-opacity-10 rounded-3 p-3 me-3">
+                    <i class="bi bi-exclamation-triangle fs-3 text-danger"></i>
+                </div>
+                <div>
+                    <div class="fs-3 fw-bold text-danger">{{ overdue_count }}</div>
+                    <small class="text-muted">Quá hạn</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex align-items-center">
+                <div class="bg-warning bg-opacity-10 rounded-3 p-3 me-3">
+                    <i class="bi bi-graph-down fs-3 text-warning"></i>
+                </div>
+                <div>
+                    <div class="fs-3 fw-bold text-warning">{{ avg_error }} ngày</div>
+                    <small class="text-muted">Sai lệch TB tháng</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Thông tin thêm -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body d-flex align-items-center">
+                <div class="bg-info bg-opacity-10 rounded-3 p-3 me-3">
+                    <i class="bi bi-cpu fs-3 text-info"></i>
+                </div>
+                <div>
+                    <div class="fw-bold">{{ active_model.version_number|default:"N/A" }}</div>
+                    <small class="text-muted">Model đang dùng</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body d-flex align-items-center">
+                <div class="bg-secondary bg-opacity-10 rounded-3 p-3 me-3">
+                    <i class="bi bi-database fs-3 text-secondary"></i>
+                </div>
+                <div>
+                    <div class="fw-bold">{{ pending_retrain }} mẫu</div>
+                    <small class="text-muted">Chờ retrain</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body d-flex align-items-center">
+                <div class="bg-warning bg-opacity-10 rounded-3 p-3 me-3">
+                    <i class="bi bi-exclamation-circle fs-3 text-warning"></i>
+                </div>
+                <div>
+                    <div class="fw-bold">{{ warning_count }}</div>
+                    <small class="text-muted">Sắp đến hạn</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Biểu đồ -->
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white fw-semibold">
+                <i class="bi bi-bar-chart"></i> So sánh LOS dự đoán vs thực tế
+            </div>
+            <div class="card-body">
+                <canvas id="losComparisonChart" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white fw-semibold">
+                <i class="bi bi-distribute-vertical"></i> Phân phối sai lệch dự đoán
+            </div>
+            <div class="card-body">
+                <canvas id="errorDistChart" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white fw-semibold">
+                <i class="bi bi-graph-up"></i> Hiệu suất mô hình qua các version
+            </div>
+            <div class="card-body">
+                <canvas id="modelPerfChart" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Danh sách cảnh báo -->
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-bell"></i> Cảnh báo bệnh nhân</span>
+                <a href="{% url 'patients:list' %}?alert=danger" class="btn btn-sm btn-outline-danger">Xem tất cả</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Bệnh nhân</th>
+                                <th class="text-center">Ngày nằm</th>
+                                <th>Mức</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in alert_patients %}
+                            <tr class="{% if p.alert_level == 'danger' %}table-danger{% else %}table-warning{% endif %}">
+                                <td>
+                                    <a href="{% url 'patients:detail' p.id_str %}" class="text-decoration-none">
+                                        {{ p.patient_name|default:p.patient_id }}
+                                    </a>
+                                </td>
+                                <td class="text-center">{{ p.days_admitted }} ngày</td>
+                                <td>
+                                    {% if p.alert_level == 'danger' %}
+                                    <span class="badge bg-danger">Quá hạn</span>
+                                    {% else %}
+                                    <span class="badge bg-warning text-dark">Sắp hạn</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="3" class="text-center text-muted py-4">Không có cảnh báo.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    fetch('{% url "dashboard:chart_data" %}?type=los_comparison')
+        .then(r => r.json())
+        .then(data => {
+            if (data.labels && data.labels.length > 0) {
+                new Chart(document.getElementById('losComparisonChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: data.labels.slice(0, 20),
+                        datasets: [
+                            { label: 'Dự đoán', data: data.predicted.slice(0, 20), backgroundColor: 'rgba(54,162,235,0.7)' },
+                            { label: 'Thực tế', data: data.actual.slice(0, 20), backgroundColor: 'rgba(255,99,132,0.7)' }
+                        ]
+                    },
+                    options: { responsive: true, scales: { y: { beginAtZero: true, title: { display: true, text: 'Ngày' } } } }
+                });
+            } else {
+                document.getElementById('losComparisonChart').parentElement.innerHTML = '<p class="text-center text-muted py-5">Chưa có dữ liệu xuất viện.</p>';
+            }
+        });
+
+    fetch('{% url "dashboard:chart_data" %}?type=error_distribution')
+        .then(r => r.json())
+        .then(data => {
+            if (data.counts && data.counts.some(c => c > 0)) {
+                new Chart(document.getElementById('errorDistChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: data.labels,
+                        datasets: [{ label: 'Số ca', data: data.counts, backgroundColor: 'rgba(153,102,255,0.7)' }]
+                    },
+                    options: { responsive: true, scales: { x: { title: { display: true, text: 'Sai lệch (ngày)' } }, y: { beginAtZero: true } } }
+                });
+            } else {
+                document.getElementById('errorDistChart').parentElement.innerHTML = '<p class="text-center text-muted py-5">Chưa có dữ liệu.</p>';
+            }
+        });
+
+    fetch('{% url "dashboard:chart_data" %}?type=model_performance')
+        .then(r => r.json())
+        .then(data => {
+            if (data.labels && data.labels.length > 0) {
+                new Chart(document.getElementById('modelPerfChart'), {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            { label: 'MAE', data: data.mae, borderColor: '#ff6384', tension: 0.3 },
+                            { label: 'RMSE', data: data.rmse, borderColor: '#36a2eb', tension: 0.3 },
+                            { label: 'R²', data: data.r2, borderColor: '#4bc0c0', tension: 0.3, yAxisID: 'y1' }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: { beginAtZero: true, title: { display: true, text: 'Error' } },
+                            y1: { position: 'right', min: 0, max: 1, title: { display: true, text: 'R²' } }
+                        }
+                    }
+                });
+            } else {
+                document.getElementById('modelPerfChart').parentElement.innerHTML = '<p class="text-center text-muted py-5">Chưa có dữ liệu.</p>';
+            }
+        });
+});
+</script>
+{% endblock %}

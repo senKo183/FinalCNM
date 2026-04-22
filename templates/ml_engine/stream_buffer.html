@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block title %}Stream Buffer{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0"><i class="bi bi-database text-primary"></i> Stream Buffer</h2>
+    <div>
+        <span class="badge bg-warning fs-6 me-2">{{ total_pending }} chờ xử lý</span>
+        <span class="badge bg-success fs-6">{{ total_used }} đã dùng</span>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Patient ID</th>
+                    <th class="text-center">LOS thực tế</th>
+                    <th>Ngày tạo</th>
+                    <th>Trạng thái</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr>
+                    <td class="fw-semibold">{{ item.patient_id }}</td>
+                    <td class="text-center">{{ item.actual_los }} ngày</td>
+                    <td>{{ item.created_at|date:"d/m/Y H:i" }}</td>
+                    <td>
+                        {% if item.used_for_retrain %}
+                        <span class="badge bg-success">Đã retrain</span>
+                        {% else %}
+                        <span class="badge bg-warning text-dark">Chờ xử lý</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" class="text-center text-muted py-4">Chưa có dữ liệu trong buffer.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

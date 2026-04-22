@@ -1,0 +1,356 @@
+{% extends 'base.html' %}
+
+{% block title %}Nhập viện mới{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <h2 class="fw-bold mb-4"><i class="bi bi-person-plus text-primary"></i> Tạo hồ sơ nhập viện</h2>
+
+        <form method="post">
+            {% csrf_token %}
+
+            <!-- Thông tin hành chính -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-primary text-white fw-semibold">
+                    <i class="bi bi-clipboard2-pulse"></i> Thông tin hành chính
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Số CCCD <span class="text-danger">*</span></label>
+                            <input type="text" name="cccd" id="cccd-input" class="form-control" required
+                                   placeholder="VD: 001234567890" maxlength="12" pattern="\d{9,12}">
+                            <div class="form-text">Nhập CCCD để tự động tra cứu lịch sử nhập viện</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Họ và tên <span class="text-danger">*</span></label>
+                            <input type="text" name="patient_name" class="form-control" required placeholder="Họ và tên">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Ngày sinh</label>
+                            <input type="date" name="date_of_birth" class="form-control">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Số điện thoại</label>
+                            <input type="tel" name="phone" id="phone-input" class="form-control"
+                                   placeholder="VD: 0901234567" pattern="0\d{9}" maxlength="10">
+                            <div id="phone-error" class="invalid-feedback"></div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Giới tính</label>
+                            <select name="gender" class="form-select">
+                                <option value="M">Nam</option>
+                                <option value="F">Nữ</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Mã cơ sở y tế</label>
+                            <select name="facid" class="form-select">
+                                {% for f in facility_choices %}
+                                <option value="{{ f }}">Cơ sở {{ f }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Ngày giờ nhập viện <span class="text-danger">*</span></label>
+                            <input type="datetime-local" name="admission_date" class="form-control" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Số lần tái nhập viện (rcount)</label>
+                            <input type="number" name="rcount" id="rcount-input" class="form-control"
+                                   value="0" min="0" max="5" readonly>
+                            <div class="form-text text-muted">Tự động tính từ CCCD</div>
+                        </div>
+                    </div>
+
+                    <!-- Thông báo lịch sử nhập viện -->
+                    <div id="cccd-result" class="mt-3" style="display: none;">
+                        <div id="cccd-alert" class="alert alert-info d-flex align-items-center" role="alert">
+                            <i class="bi bi-info-circle-fill me-2"></i>
+                            <div id="cccd-message"></div>
+                        </div>
+                        <div id="cccd-history-wrapper" style="display: none;">
+                            <button type="button" class="btn btn-sm btn-outline-info mb-2" data-bs-toggle="collapse"
+                                    data-bs-target="#cccd-history-table">
+                                <i class="bi bi-clock-history"></i> Xem lịch sử nhập viện
+                            </button>
+                            <div class="collapse" id="cccd-history-table">
+                                <table class="table table-sm table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Mã EID</th>
+                                            <th>Ngày nhập viện</th>
+                                            <th>Ngày xuất viện</th>
+                                            <th>LOS thực tế</th>
+                                            <th>Tình trạng</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="cccd-history-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cảnh báo đang nằm viện -->
+                    <div id="cccd-warning-admitted" class="alert alert-warning mt-3" style="display: none;">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        <strong>Lưu ý:</strong> Bệnh nhân này hiện đang có hồ sơ nằm viện chưa xuất viện.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chỉ số xét nghiệm -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-info text-white fw-semibold">
+                    <i class="bi bi-activity"></i> Chỉ số cơ bản & xét nghiệm
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">BMI</label>
+                            <input type="number" step="0.01" name="bmi" class="form-control" placeholder="VD: 25.5">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Hematocrit (%)</label>
+                            <input type="number" step="0.01" name="hematocrit" class="form-control" placeholder="VD: 38.5">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Bạch cầu trung tính (Neutrophils)</label>
+                            <input type="number" step="0.01" name="neutrophils" class="form-control" placeholder="VD: 6.5">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Natri (Sodium) mEq/L</label>
+                            <input type="number" step="0.01" name="sodium" class="form-control" placeholder="VD: 140">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Glucose mg/dL</label>
+                            <input type="number" step="0.01" name="glucose" class="form-control" placeholder="VD: 120">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">BUN (Blood Urea Nitrogen)</label>
+                            <input type="number" step="0.01" name="bloodureanitro" class="form-control" placeholder="VD: 15">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Creatinine mg/dL</label>
+                            <input type="number" step="0.01" name="creatinine" class="form-control" placeholder="VD: 1.2">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Mạch (Pulse) bpm</label>
+                            <input type="number" step="0.1" name="pulse" class="form-control" placeholder="VD: 80">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Nhịp thở (Respiration)</label>
+                            <input type="number" step="0.1" name="respiration" class="form-control" placeholder="VD: 18">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bệnh lý kèm theo -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-warning text-dark fw-semibold">
+                    <i class="bi bi-bandaid"></i> Bệnh lý kèm theo
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        {% for field_name, label in comorbidity_fields %}
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="{{ field_name }}" id="{{ field_name }}" value="1">
+                                <label class="form-check-label" for="{{ field_name }}">{{ label }}</label>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Chẩn đoán phụ ngoài ICD-9 <span class="text-danger">*</span></label>
+                            <input type="number" name="secondarydiagnosisnonicd9" id="secondarydiag-input"
+                                   class="form-control" value="0" min="0" max="10" step="1" required>
+                            <div id="secondarydiag-error" class="invalid-feedback"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary btn-lg">
+                    <i class="bi bi-check-lg"></i> Tạo hồ sơ & Dự đoán LOS
+                </button>
+                <a href="{% url 'patients:list' %}" class="btn btn-outline-secondary btn-lg">Hủy</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const cccdInput = document.getElementById('cccd-input');
+    const rcountInput = document.getElementById('rcount-input');
+    const resultDiv = document.getElementById('cccd-result');
+    const alertDiv = document.getElementById('cccd-alert');
+    const msgDiv = document.getElementById('cccd-message');
+    const historyWrapper = document.getElementById('cccd-history-wrapper');
+    const historyBody = document.getElementById('cccd-history-body');
+    const warningAdmitted = document.getElementById('cccd-warning-admitted');
+
+    let debounceTimer = null;
+
+    cccdInput.addEventListener('input', function () {
+        clearTimeout(debounceTimer);
+        const cccd = this.value.trim();
+
+        if (cccd.length < 9) {
+            resultDiv.style.display = 'none';
+            warningAdmitted.style.display = 'none';
+            rcountInput.value = 0;
+            return;
+        }
+
+        debounceTimer = setTimeout(function () {
+            fetch('{% url "patients:lookup_cccd" %}?cccd=' + encodeURIComponent(cccd))
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                    rcountInput.value = data.rcount;
+
+                    if (data.found) {
+                        resultDiv.style.display = 'block';
+                        alertDiv.className = 'alert alert-info d-flex align-items-center';
+                        msgDiv.textContent = 'Bệnh nhân đã có ' + data.total_past_admissions +
+                            ' lần nhập viện trước đó. rcount = ' + data.rcount;
+
+                        historyBody.innerHTML = '';
+                        if (data.history.length > 0) {
+                            historyWrapper.style.display = 'block';
+                            var statusMap = {
+                                'recovered': 'Khỏi bệnh',
+                                'transferred': 'Chuyển viện',
+                                'self_discharge': 'Xin về',
+                                'deceased': 'Tử vong'
+                            };
+                            data.history.forEach(function (h) {
+                                var tr = document.createElement('tr');
+                                tr.innerHTML =
+                                    '<td>' + h.patient_id + '</td>' +
+                                    '<td>' + h.admission_date + '</td>' +
+                                    '<td>' + h.discharge_date + '</td>' +
+                                    '<td>' + (h.actual_los != null ? h.actual_los + ' ngày' : '—') + '</td>' +
+                                    '<td>' + (statusMap[h.discharge_status] || h.discharge_status) + '</td>';
+                                historyBody.appendChild(tr);
+                            });
+                        } else {
+                            historyWrapper.style.display = 'none';
+                        }
+                    } else {
+                        resultDiv.style.display = 'block';
+                        alertDiv.className = 'alert alert-success d-flex align-items-center';
+                        msgDiv.textContent = 'Lần nhập viện đầu tiên của bệnh nhân này.';
+                        historyWrapper.style.display = 'none';
+                    }
+
+                    warningAdmitted.style.display = data.currently_admitted ? 'block' : 'none';
+                })
+                .catch(function () {
+                    resultDiv.style.display = 'none';
+                    warningAdmitted.style.display = 'none';
+                });
+        }, 400);
+    });
+})();
+
+(function () {
+    var phoneInput = document.getElementById('phone-input');
+    var phoneError = document.getElementById('phone-error');
+
+    function validatePhone() {
+        var val = phoneInput.value.trim();
+        if (!val) {
+            phoneInput.classList.remove('is-invalid', 'is-valid');
+            phoneError.textContent = '';
+            return true;
+        }
+        if (!/^0\d{9}$/.test(val)) {
+            phoneInput.classList.add('is-invalid');
+            phoneInput.classList.remove('is-valid');
+            if (!/^\d+$/.test(val)) {
+                phoneError.textContent = 'Số điện thoại chỉ được chứa chữ số.';
+            } else if (val[0] !== '0') {
+                phoneError.textContent = 'Số điện thoại phải bắt đầu bằng số 0.';
+            } else {
+                phoneError.textContent = 'Số điện thoại phải có đúng 10 chữ số.';
+            }
+            return false;
+        }
+        phoneInput.classList.remove('is-invalid');
+        phoneInput.classList.add('is-valid');
+        phoneError.textContent = '';
+        return true;
+    }
+
+    phoneInput.addEventListener('input', validatePhone);
+    phoneInput.addEventListener('blur', validatePhone);
+
+    phoneInput.closest('form').addEventListener('submit', function (e) {
+        if (!validatePhone()) {
+            e.preventDefault();
+            phoneInput.focus();
+        }
+    });
+})();
+
+(function () {
+    const diagInput = document.getElementById('secondarydiag-input');
+    const diagError = document.getElementById('secondarydiag-error');
+
+    function validateDiag() {
+        const raw = diagInput.value.trim();
+
+        if (raw === '') {
+            diagInput.classList.add('is-invalid');
+            diagInput.classList.remove('is-valid');
+            diagError.textContent = 'Trường này là bắt buộc, không được để trống.';
+            return false;
+        }
+
+        const num = Number(raw);
+
+        if (!Number.isInteger(num)) {
+            diagInput.classList.add('is-invalid');
+            diagInput.classList.remove('is-valid');
+            diagError.textContent = 'Giá trị phải là số nguyên (không chấp nhận số thập phân).';
+            return false;
+        }
+
+        if (num < 0) {
+            diagInput.classList.add('is-invalid');
+            diagInput.classList.remove('is-valid');
+            diagError.textContent = 'Giá trị không được là số âm.';
+            return false;
+        }
+
+        if (num > 10) {
+            diagInput.classList.add('is-invalid');
+            diagInput.classList.remove('is-valid');
+            diagError.textContent = 'Giá trị tối đa là 10.';
+            return false;
+        }
+
+        diagInput.classList.remove('is-invalid');
+        diagInput.classList.add('is-valid');
+        diagError.textContent = '';
+        return true;
+    }
+
+    diagInput.addEventListener('input', validateDiag);
+    diagInput.addEventListener('blur', validateDiag);
+
+    diagInput.closest('form').addEventListener('submit', function (e) {
+        if (!validateDiag()) {
+            e.preventDefault();
+            diagInput.focus();
+        }
+    });
+})();
+</script>
+{% endblock %}
