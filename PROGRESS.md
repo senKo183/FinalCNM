@@ -71,3 +71,29 @@
 - **Lưu ý:**
   - Collection `system_config` tự động tạo document mặc định nếu chưa tồn tại (fallback về settings.py)
   - Chỉnh sửa hồ sơ không cho phép thay đổi CCCD vì ảnh hưởng trực tiếp đến logic rcount
+
+### [02/03/2026] – v2 Giai đoạn 1 Foundation: MLflow + MinIO + PostgreSQL + SGDRegressor
+- **Đã làm:**
+  - Hạ tầng MLOps cơ bản (readme_los_v2.md — Giai đoạn 1 / Tuần 1-2):
+    - `docker-compose.yml` với 5 service: `postgres` (MLflow metadata), `minio` + `minio_init` (S3 artifact store, bucket tự tạo `mlflow-artifacts` & `dvc-storage`), `mlflow` (tracking server + registry, port 5000), `redis` (có password — dùng cho Celery + tương lai Feast online store)
+    - `.env` mở rộng với POSTGRES_*, MINIO_*, MLFLOW_*, AWS_*, REDIS_PASSWORD/REDIS_URL, MLFLOW_EXPERIMENT_NAME, MLFLOW_REGISTERED_MODEL_NAME
+    - `requirements.txt` thêm `mlflow>=2.16`, `boto3>=1.34`, `psycopg2-binary>=2.9`, `sqlalchemy>=2.0`
+    - `settings.py` thêm MLFLOW_TRACKING_URI / S3 endpoint / experiment / registry config, tự set AWS creds vào os.environ để MLflow upload artifact qua boto3
+  - Module ML nâng cấp:
+    - `ml_engine/mlflow_config.py` (mới): helper lazy-import MLflow, `get_mlflow()`, `get_mlflow_client()`, `is_mlflow_available()`, `get_champion_model_uri()`, `promote_to_champion()` — fail gracefully nếu MLflow chưa sẵn sàng
+    - `ml_engine/trainer.py`: thay `GradientBoostingRegressor` bằng `SGDRegressor` bọc trong `Pipeline`, hỗ trợ `partial_fit()` khi đã có version SGD trước đó (incremental learning), fallback `fit()` lần đầu. Mỗi retrain tạo MLflow Run log params (alpha, loss, penalty, learning_rate, train_mode) + metrics (mae/rmse/r2/num_samples/improved_vs_champion) + model artifact qua `mlflow.sklearn.log_model()` lên MinIO, đồng thời register vào Registry tên `los_model`. Khi MAE cải thiện thì tự `set_registered_model_alias(..., 'champion', version)`
+    - `ml_engine/predictor.py`: ưu tiên `mlflow.sklearn.load_model('models:/los_model@champion')`, fallback về file .pkl local. Thêm `reload_model()` clear cache. Response `predict_los` có thêm `model_source` để debug
+  - Admin UI:
+    - `ml_engine/views.py` thêm `mlflow_dashboard_view` (admin-only): ping MLflow, list 10 run gần nhất kèm metrics + train_mode + improved, hiển thị @champion version/run_id, link ngoài `MLFLOW_TRACKING_URI`
+    - `ml_engine/urls.py` thêm route `mlflow/`
+    - `templates/ml_engine/mlflow_dashboard.html` (mới): hiển thị status, bảng runs, hướng dẫn khởi động Docker khi MLflow chưa chạy
+    - `templates/base.html` thêm link "MLflow" trong navbar admin
+  - `model_versions` collection mở rộng trường mới: `algorithm`, `train_mode` (full_fit/partial_fit), `mlflow_run_id`, `mlflow_model_uri`, `mlflow_registry_version`
+  - `SETUP_V2.md` (mới): hướng dẫn khởi động stack, troubleshooting, lộ trình các giai đoạn tiếp theo
+- **File thay đổi:** .env, requirements.txt, docker-compose.yml (mới), PredictLOSWeb/settings.py, ml_engine/mlflow_config.py (mới), ml_engine/trainer.py, ml_engine/predictor.py, ml_engine/views.py, ml_engine/urls.py, templates/ml_engine/mlflow_dashboard.html (mới), templates/base.html, SETUP_V2.md (mới)
+- **Lưu ý:**
+  - Toàn bộ tích hợp MLflow dùng pattern fail-graceful: nếu Docker stack chưa chạy, trainer vẫn ghi model.pkl local và predictor vẫn serve từ file — hệ thống v1 không bị vỡ
+  - Không bỏ manual Z-score normalization ở `_prepare_training_data` / `preprocess_features` để tránh double-scaling → Pipeline không dùng `StandardScaler`. Khi triển khai Feast (Giai đoạn 4) sẽ refactor lại thống nhất
+  - `partial_fit` chỉ chạy với version có `algorithm='SGDRegressor'`. Version đầu tiên sau nâng cấp vẫn là `full_fit` vì previous version (v1 GradientBoosting) không tương thích
+  - Redis giờ có password → `CELERY_BROKER_URL` đã đổi sang `redis://:redis_password@localhost:6379/0`. Nếu đang dev với Redis local không password, cần sửa `.env` cho khớp
+  - Các Giai đoạn 2-5 (Evidently, SHAP, DVC, Feast, FastAPI, CI/CD) chưa triển khai — sẽ làm ở lần sau

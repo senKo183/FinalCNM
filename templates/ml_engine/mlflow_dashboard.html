@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block title %}MLflow Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1"><i class="bi bi-diagram-3"></i> MLflow Dashboard</h1>
+        <p class="text-muted mb-0">Experiment tracking & Model Registry — v2 Foundation</p>
+    </div>
+    <div>
+        {% if mlflow_available %}
+        <a href="{{ mlflow_ui_url }}" target="_blank" class="btn btn-primary">
+            <i class="bi bi-box-arrow-up-right"></i> Mở MLflow UI
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+{% if not mlflow_available %}
+<div class="alert alert-warning">
+    <h5 class="alert-heading"><i class="bi bi-exclamation-triangle"></i> MLflow Server chưa sẵn sàng</h5>
+    <p class="mb-1">Không kết nối được tới <code>{{ mlflow_ui_url }}</code>.</p>
+    <hr>
+    <p class="mb-1"><strong>Cách khắc phục:</strong></p>
+    <ol class="mb-0">
+        <li>Đảm bảo Docker Desktop đang chạy.</li>
+        <li>Trong thư mục dự án chạy: <code>docker compose up -d postgres minio minio_init mlflow redis</code></li>
+        <li>Đợi ~30 giây để các container sẵn sàng (kiểm tra <code>docker compose ps</code>).</li>
+        <li>Truy cập <a href="{{ mlflow_ui_url }}" target="_blank">{{ mlflow_ui_url }}</a> để xác nhận UI chạy.</li>
+    </ol>
+</div>
+{% else %}
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card border-primary">
+            <div class="card-body">
+                <div class="text-muted small text-uppercase">Experiment</div>
+                <div class="h5 mb-0">{{ experiment_name }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-success">
+            <div class="card-body">
+                <div class="text-muted small text-uppercase">Registered Model</div>
+                <div class="h5 mb-0">{{ registered_model_name }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card {% if champion_version %}border-warning{% else %}border-secondary{% endif %}">
+            <div class="card-body">
+                <div class="text-muted small text-uppercase">@champion</div>
+                {% if champion_version %}
+                <div class="h5 mb-0">v{{ champion_version }}</div>
+                <small class="text-muted">run: {{ champion_run_id|slice:":8" }}…</small>
+                {% else %}
+                <div class="h5 mb-0 text-muted">chưa có</div>
+                <small class="text-muted">Retrain lần đầu sẽ tự gắn alias</small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <strong><i class="bi bi-clock-history"></i> 10 Run gần nhất</strong>
+        <span class="badge bg-secondary">{{ recent_runs|length }} run</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Run</th>
+                    <th>Thời gian</th>
+                    <th>Mode</th>
+                    <th class="text-end">MAE</th>
+                    <th class="text-end">RMSE</th>
+                    <th class="text-end">R²</th>
+                    <th>Cải thiện?</th>
+                    <th>Trạng thái</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in recent_runs %}
+                <tr>
+                    <td>
+                        <a href="{{ mlflow_ui_url }}/#/experiments/0/runs/{{ r.run_id }}" target="_blank"
+                           class="text-decoration-none">
+                            <code>{{ r.run_id|slice:":8" }}</code>
+                        </a>
+                        <div class="small text-muted">{{ r.run_name }}</div>
+                    </td>
+                    <td>{{ r.start_time|date:"d/m/Y H:i"|default:"—" }}</td>
+                    <td><span class="badge bg-info text-dark">{{ r.train_mode|default:"—" }}</span></td>
+                    <td class="text-end">{{ r.mae|floatformat:4|default:"—" }}</td>
+                    <td class="text-end">{{ r.rmse|floatformat:4|default:"—" }}</td>
+                    <td class="text-end">{{ r.r2|floatformat:4|default:"—" }}</td>
+                    <td>
+                        {% if r.improved == 'True' %}
+                        <span class="badge bg-success">✓</span>
+                        {% elif r.improved == 'False' %}
+                        <span class="badge bg-secondary">✗</span>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td><span class="badge bg-light text-dark">{{ r.status }}</span></td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="text-center text-muted py-4">Chưa có run nào</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="alert alert-info mt-4">
+    <h6><i class="bi bi-info-circle"></i> Ghi chú v2 Foundation</h6>
+    <ul class="mb-0 small">
+        <li>Mỗi lần retrain tạo một MLflow Run, log đầy đủ params (SGD hyperparams) + metrics (MAE/RMSE/R²) + model artifact trên MinIO.</li>
+        <li>Nếu MAE mới ≤ MAE của @champion hiện tại, model version mới sẽ tự được promote @champion và predictor sẽ load từ Registry lần request kế tiếp.</li>
+        <li>Các giai đoạn kế tiếp (Evidently drift, SHAP, DVC, Feast, CI/CD) sẽ được thêm sau.</li>
+    </ul>
+</div>
+{% endif %}
+{% endblock %}

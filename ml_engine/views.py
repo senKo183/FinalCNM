@@ -6,6 +6,7 @@ from django.http import JsonResponse
 from django.conf import settings
 from PredictLOSWeb.mongodb import get_collection
 from accounts.decorators import admin_required
+from .mlflow_config import is_mlflow_available, get_mlflow_client
 
 SYSTEM_CONFIG_DEFAULTS = {
     'retrain_threshold': 10,
@@ -124,3 +125,59 @@ def retrain_settings_view(request):
         'pending_count': pending_count,
     }
     return render(request, 'ml_engine/retrain_settings.html', context)
+
+
+@login_required
+@admin_required
+def mlflow_dashboard_view(request):
+    """Admin panel: trạng thái MLflow + link UI + liệt kê 10 run gần nhất."""
+    available = is_mlflow_available()
+    recent_runs = []
+    champion_version = None
+    champion_run_id = None
+
+    if available:
+        client = get_mlflow_client()
+        try:
+            experiment = client.get_experiment_by_name(settings.MLFLOW_EXPERIMENT_NAME)
+            if experiment is not None:
+                runs = client.search_runs(
+                    experiment_ids=[experiment.experiment_id],
+                    order_by=['attributes.start_time DESC'],
+                    max_results=10,
+                )
+                for run in runs:
+                    recent_runs.append({
+                        'run_id': run.info.run_id,
+                        'run_name': run.data.tags.get('mlflow.runName', ''),
+                        'status': run.info.status,
+                        'start_time': datetime.fromtimestamp(run.info.start_time / 1000)
+                            if run.info.start_time else None,
+                        'mae': run.data.metrics.get('mae'),
+                        'rmse': run.data.metrics.get('rmse'),
+                        'r2': run.data.metrics.get('r2'),
+                        'train_mode': run.data.tags.get('train_mode', ''),
+                        'improved': run.data.tags.get('improved', ''),
+                    })
+        except Exception as exc:  # noqa: BLE001
+            messages.warning(request, f'Không đọc được runs từ MLflow: {exc}')
+
+        try:
+            mv = client.get_model_version_by_alias(
+                settings.MLFLOW_REGISTERED_MODEL_NAME, 'champion'
+            )
+            champion_version = mv.version
+            champion_run_id = mv.run_id
+        except Exception:
+            pass
+
+    context = {
+        'mlflow_available': available,
+        'mlflow_ui_url': settings.MLFLOW_TRACKING_URI,
+        'experiment_name': settings.MLFLOW_EXPERIMENT_NAME,
+        'registered_model_name': settings.MLFLOW_REGISTERED_MODEL_NAME,
+        'recent_runs': recent_runs,
+        'champion_version': champion_version,
+        'champion_run_id': champion_run_id,
+    }
+    return render(request, 'ml_engine/mlflow_dashboard.html', context)

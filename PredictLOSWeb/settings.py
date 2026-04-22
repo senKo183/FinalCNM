@@ -101,19 +101,33 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
 }
 
-# Celery
+# Celery / Redis
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/0')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
 
 # ML Config
 ML_MODELS_DIR = BASE_DIR / 'ml_models'
 CSV_DATA_PATH = BASE_DIR / 'LengthOfStay.csv'
 RETRAIN_SAMPLE_THRESHOLD = config('RETRAIN_SAMPLE_THRESHOLD', default=10, cast=int)
 RETRAIN_DAYS_THRESHOLD = config('RETRAIN_DAYS_THRESHOLD', default=7, cast=int)
+
+# MLflow (v2 — Giai đoạn 1 Foundation)
+MLFLOW_TRACKING_URI = config('MLFLOW_TRACKING_URI', default='http://localhost:5000')
+MLFLOW_S3_ENDPOINT_URL = config('MLFLOW_S3_ENDPOINT_URL', default='http://localhost:9000')
+MLFLOW_EXPERIMENT_NAME = config('MLFLOW_EXPERIMENT_NAME', default='los_prediction')
+MLFLOW_REGISTERED_MODEL_NAME = config('MLFLOW_REGISTERED_MODEL_NAME', default='los_model')
+MLFLOW_AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID', default='minio_admin')
+MLFLOW_AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY', default='minio_password')
+
+# Make MLflow S3 creds available to boto3 used by mlflow artifact upload
+os.environ.setdefault('MLFLOW_S3_ENDPOINT_URL', MLFLOW_S3_ENDPOINT_URL)
+os.environ.setdefault('AWS_ACCESS_KEY_ID', MLFLOW_AWS_ACCESS_KEY_ID)
+os.environ.setdefault('AWS_SECRET_ACCESS_KEY', MLFLOW_AWS_SECRET_ACCESS_KEY)
 
 # Login redirect
 LOGIN_URL = '/accounts/login/'
