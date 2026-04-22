@@ -1,258 +1,387 @@
-# Tài liệu mô tả Backend — Hệ thống dự đoán thời gian nằm viện (LOS)
+# Hệ thống Dự đoán Thời gian Nằm viện (LOS) — Phiên bản MLOps
 
+> **Dự án:** Length of Stay Prediction System v2.0  
+> **Kiến trúc:** MLOps Production-Grade  
 > **Môn học:** Thiết kế hệ thống Web  
-> **Công nghệ:** Django · MongoDB · Celery · scikit-learn  
-> **Mô hình ML:** Linear Regression (file .pkl)
 
 ---
 
-## 📋 Lịch sử cập nhật tài liệu
+## Mục lục
 
-> Các phần được bổ sung hoặc thay đổi so với bản gốc được đánh dấu bằng ký hiệu **`✏️ [CẬP NHẬT]`** ngay tại tiêu đề tương ứng bên dưới.
-
-| Lần | Ngày cập nhật | Nội dung thay đổi | Vị trí |
-|---|---|---|---|
-| 1 | 02/03/2026 | Bổ sung thông tin form nhập viện (họ tên, ngày sinh, số điện thoại) | Mục 3.2 |
-| 1 | 02/03/2026 | Thêm mới mục tự động sinh mã bệnh nhân EID | Mục 3.2 |
-| 1 | 02/03/2026 | Thêm mới mục kiểm tra tái nhập viện và cập nhật rcount tự động | Mục 3.2 |
-| 2 | 02/03/2026 | Bổ sung CCCD vào form và thay thế làm định danh chính cho rcount | Mục 3.2 |
-| 2 | 02/03/2026 | Cập nhật logic tra cứu realtime theo CCCD, thêm read-only cho rcount | Mục 3.2 |
-| 3 | 02/03/2026 | Tách riêng mục Vùng đệm dữ liệu và Điều kiện kích hoạt Retrain | Mục 3.3 |
-| 3 | 02/03/2026 | Bổ sung Điều kiện 1 (ngưỡng 10 mẫu) và Điều kiện 2 (7 ngày) cho retrain | Mục 3.3 |
-| 3 | 02/03/2026 | Bổ sung ghi chú đánh dấu buffer entries đã dùng sau retrain | Mục 3.3 |
-| 4 | 02/03/2026 | Thêm tính năng filter lọc bệnh nhân đang nhập viện / đã xuất viện | Mục 3.2 |
-| 4 | 02/03/2026 | Thêm ràng buộc bắt buộc nhập số nguyên cho trường secondarydiagnosisnonicd9 | Mục 3.2 |
-| 4 | 02/03/2026 | Thêm ràng buộc ngày xuất viện không được chọn thời điểm ở tương lai | Mục 3.2 |
-| 5 | 02/03/2026 | Thêm tính năng chỉnh sửa hồ sơ bệnh nhân | Mục 3.2 |
-| 5 | 02/03/2026 | Cập nhật ràng buộc số điện thoại đúng định dạng Việt Nam (10 số, bắt đầu bằng 0) | Mục 3.2 |
-| 5 | 02/03/2026 | Cập nhật cột "Còn lại" hiển thị làm tròn 2 chữ số sau dấu phẩy | Mục 3.2 |
-| 5 | 02/03/2026 | Thêm tính năng cấu hình ngưỡng số mẫu tự động retrain | Mục 3.3 |
+1. [Giới thiệu tổng quan](#1-giới-thiệu-tổng-quan)
+2. [Stack công nghệ đầy đủ](#2-stack-công-nghệ-đầy-đủ)
+3. [Kiến trúc hệ thống nâng cấp](#3-kiến-trúc-hệ-thống-nâng-cấp)
+4. [Các pipeline chi tiết](#4-các-pipeline-chi-tiết)
+5. [Chức năng chi tiết (giữ nguyên từ v1)](#5-chức-năng-chi-tiết-giữ-nguyên-từ-v1)
+6. [Cơ sở dữ liệu & Lưu trữ](#6-cơ-sở-dữ-liệu--lưu-trữ)
+7. [Bảng so sánh hệ thống cũ và mới](#7-bảng-so-sánh-hệ-thống-cũ-và-mới)
+8. [Lộ trình triển khai](#8-lộ-trình-triển-khai)
 
 ---
 
 ## 1. Giới thiệu tổng quan
 
-Hệ thống dự đoán thời gian nằm viện (Length of Stay — LOS) là một ứng dụng web hỗ trợ nhân viên y tế trong việc ước lượng số ngày bệnh nhân cần điều trị nội trú dựa trên các chỉ số lâm sàng và thông tin cá nhân được nhập lúc nhập viện. Kết quả dự đoán được tạo ra bởi mô hình Machine Learning đã được huấn luyện trước, sau đó liên tục được cải thiện thông qua cơ chế học tăng cường từ dữ liệu thực tế (ML Streaming).
+Hệ thống LOS v2.0 là bản nâng cấp toàn diện từ kiến trúc backend truyền thống (Django + Celery + scikit-learn) lên một hệ thống MLOps sản xuất hoàn chỉnh, tham chiếu trực tiếp từ các pattern đã được kiểm chứng trong dự án **Customer Churn Prediction** (AI Vietnam — 2025).
 
-Hệ thống phục vụ hai đối tượng chính là bác sĩ/y tá có nhu cầu quản lý và theo dõi tình trạng bệnh nhân, và quản trị viên có quyền giám sát toàn bộ hệ thống cũng như kiểm soát quá trình cập nhật mô hình.
+Trong khi v1.0 đã có cơ chế retrain tự động cơ bản, v2.0 giải quyết các khoảng trống nghiêm trọng: thiếu kiểm soát phiên bản dữ liệu, không có monitoring data drift (đặc biệt nguy hiểm trong bối cảnh y tế), không có model registry chuyên dụng, không có explainability, và không có CI/CD pipeline tự động hóa.
 
----
-
-## 2. Kiến trúc tổng thể
-
-Hệ thống backend được xây dựng theo mô hình REST API, trong đó Django đóng vai trò xử lý toàn bộ logic nghiệp vụ và cung cấp các endpoint cho frontend gọi đến. MongoDB được chọn làm cơ sở dữ liệu chính nhờ tính linh hoạt trong việc lưu trữ dữ liệu y tế với nhiều trường tùy chọn. Celery kết hợp với Redis đảm nhận việc chạy các tác vụ nền như quét danh sách bệnh nhân hàng ngày và tự động retrain mô hình khi có đủ dữ liệu mới.
-
-Hệ thống gồm bốn module chính hoạt động độc lập nhưng liên kết với nhau:
-
-**Module Xác thực (Authentication)** quản lý đăng nhập, phân quyền và bảo mật truy cập toàn hệ thống.
-
-**Module Bệnh nhân (Patient Management)** xử lý toàn bộ vòng đời hồ sơ bệnh nhân từ lúc nhập viện đến khi xuất viện.
-
-**Module Machine Learning** bao gồm engine dự đoán và cơ chế cập nhật mô hình theo thời gian thực.
-
-**Module Dashboard & Báo cáo** tổng hợp dữ liệu thống kê và cảnh báo cho người dùng.
+Điểm cốt lõi của v2.0 là mọi thành phần từ dữ liệu đến model đến serving đều được theo dõi, có thể rollback, và có thể tái tạo lại hoàn toàn.
 
 ---
 
-## 3. Chức năng chi tiết
+## 2. Stack công nghệ đầy đủ
 
-### 3.1 Xác thực và phân quyền
+### 2.1 Bảng tổng quan theo phân lớp
 
-Hệ thống sử dụng xác thực dựa trên JWT Token. Mỗi request từ frontend phải kèm theo token hợp lệ trong header. Token có thời hạn và cần được làm mới định kỳ.
+| Lớp | Công nghệ | Vai trò | Có trong v1? |
+|---|---|---|---|
+| **Web Framework** | Django + DRF | REST API, business logic, authentication | ✅ Giữ nguyên |
+| **Task Queue** | Celery + Redis | Tác vụ nền, retrain, monitoring | ✅ Mở rộng |
+| **Primary Database** | MongoDB | Lưu hồ sơ bệnh nhân, users, config | ✅ Giữ nguyên |
+| **ML Framework** | scikit-learn | Linear Regression → SGDRegressor | ✅ Nâng cấp |
+| **Experiment Tracking** | MLflow | Log params/metrics/artifacts, so sánh experiments | ❌ Thêm mới |
+| **Model Registry** | MLflow Registry | Versioning, staging/champion alias, rollback | ❌ Thêm mới |
+| **Artifact Storage** | MinIO S3 | Lưu model file, charts, datasets qua MLflow | ❌ Thêm mới |
+| **Metadata Database** | PostgreSQL | Backend metadata cho MLflow Server | ❌ Thêm mới |
+| **Data Versioning** | DVC | Theo dõi phiên bản dataset, liên kết với Git | ❌ Thêm mới |
+| **Feature Store** | Feast | Quản lý features tập trung, training-serving consistency | ❌ Thêm mới |
+| **Online Feature Store** | Redis | Low-latency feature retrieval lúc inference | ❌ Thêm mới (qua Feast) |
+| **Drift Monitoring** | Evidently AI | Phát hiện data drift và model performance degradation | ❌ Thêm mới |
+| **Explainability** | SHAP | Giải thích feature importance cho từng prediction | ❌ Thêm mới |
+| **CI/CD** | GitHub Actions | Tự động hóa train → eval → register → promote | ❌ Thêm mới |
+| **Model Serving** | FastAPI | Tách model serving ra khỏi Django | ❌ Thêm mới |
+| **Reverse Proxy** | Nginx | Load balancing, routing | ❌ Thêm mới |
+| **Containerization** | Docker + Docker Compose | Đóng gói toàn bộ services | ❌ Thêm mới |
 
-Về phân quyền, hệ thống có hai vai trò chính. **Bác sĩ / Y tá** có thể tạo hồ sơ bệnh nhân, xem danh sách, cập nhật thông tin và xác nhận xuất viện. **Quản trị viên** có thêm quyền xem lịch sử các version mô hình, kích hoạt retrain thủ công và quản lý tài khoản người dùng.
+### 2.2 Chi tiết từng công nghệ mới
 
-Các chức năng cụ thể bao gồm đăng nhập bằng tên đăng nhập và mật khẩu, đăng xuất (hủy token), xem và chỉnh sửa thông tin cá nhân, và đổi mật khẩu.
+#### MLflow — Experiment Tracking & Model Registry
 
----
+MLflow đóng vai trò trung tâm của Model Pipeline. Mỗi lần retrain Celery task sẽ tạo một MLflow Run mới, log đầy đủ hyperparameters, metrics (MAE, RMSE, R²), artifacts (file model, SHAP charts) và liên kết với dataset version tương ứng. MLflow Registry quản lý vòng đời model với các alias `@staging` (đang kiểm tra) và `@champion` (đang serving production). Quản trị viên có thể so sánh side-by-side bất kỳ hai lần train nào và rollback về version cũ chỉ bằng một lệnh.
 
-### 3.2 Quản lý hồ sơ bệnh nhân
+MLflow Server được self-host với MinIO làm artifact store và PostgreSQL làm metadata store — không phụ thuộc cloud provider.
 
-Đây là module trung tâm của hệ thống. Mỗi hồ sơ bệnh nhân trải qua hai giai đoạn chính là **đang nằm viện** và **đã xuất viện**.
+#### MinIO — Object Storage
 
-#### ✏️ [CẬP NHẬT] Tạo hồ sơ nhập viện
+MinIO là S3-compatible object storage tự host. Trong hệ thống v2.0, MinIO phục vụ hai mục đích: (1) artifact backend của MLflow để lưu model file `.pkl`, confusion matrix, SHAP feature importance chart; (2) remote storage của DVC để lưu các phiên bản dataset. MinIO có thể chạy trên cùng server với các service khác qua Docker Compose.
 
-Khi bệnh nhân nhập viện, nhân viên y tế điền form với các thông tin sau:
+#### DVC — Data Version Control
 
-- **Thông tin hành chính:** mã cơ sở y tế, ngày giờ nhập viện, họ tên bệnh nhân, ngày sinh, số CCCD, số điện thoại
-- **Thông tin cơ bản:** giới tính, chỉ số BMI
-- **Chỉ số xét nghiệm:** hematocrit, hemoglobin, bạch cầu trung tính, natri, glucose, BUN, creatinine, mạch, nhịp thở
-- **Bệnh lý kèm theo:** danh sách 11 bệnh nền dạng có/không gồm suy thận giai đoạn cuối, hen suyễn, thiếu sắt, viêm phổi, lệ thuộc chất kích thích, rối loạn tâm thần, trầm cảm, điều trị tâm lý, xơ hóa, suy dinh dưỡng, chẩn đoán phụ ngoài ICD-9
+DVC theo dõi phiên bản các file dữ liệu song song với Git theo dõi phiên bản code. Trong hệ thống LOS, DVC track ba loại file: dataset gốc dùng để train ban đầu, snapshot của `stream_buffer` tại thời điểm mỗi lần retrain, và `reference_data.csv` dùng cho Evidently monitoring. Mỗi Celery retrain task tự động tạo DVC snapshot và liên kết với MLflow Run ID tương ứng, đảm bảo mọi lần train đều có thể tái tạo lại chính xác.
 
-#### ✏️ [CẬP NHẬT] Tự động sinh mã bệnh nhân (EID)
+#### Feast — Feature Store
 
-Mã bệnh nhân không do nhân viên y tế nhập tay mà được hệ thống **tự động sinh ra** ngay khi tạo hồ sơ. Mã có định dạng kết hợp giữa tiền tố cố định, ngày tháng và số thứ tự trong ngày, ví dụ `PT-20251001-0042`. Cách sinh này đảm bảo mã luôn duy nhất, dễ đọc và có thể suy ra được ngày nhập viện từ chính mã bệnh nhân.
+Feast giải quyết vấn đề training-serving skew — tình trạng khi features dùng lúc train và features lấy lúc inference không đồng nhất. Trong LOS v1, `rcount` được tính thủ công bằng cách query MongoDB mỗi lần inference. Với Feast, các features như `rcount`, `bmi` và các chỉ số xét nghiệm được quản lý tập trung qua Feature Views. Offline Store (Parquet) phục vụ batch training, Online Store (Redis) phục vụ real-time inference qua `get_online_features()`. Feast Entity trong LOS là `patient_cccd` — số CCCD làm khóa định danh chính.
 
-Lưu ý rằng mỗi lần nhập viện sẽ tạo ra một mã EID mới và độc lập. CCCD mới là định danh xuyên suốt gắn liền với một con người cụ thể, còn EID chỉ đại diện cho một đợt điều trị.
+#### Evidently AI — Drift Monitoring
 
-#### ✏️ [CẬP NHẬT] Kiểm tra tái nhập viện và cập nhật rcount tự động
+Evidently AI là thành phần quan trọng nhất bổ sung cho bối cảnh y tế. Dữ liệu bệnh nhân thay đổi theo mùa bệnh, theo chính sách bệnh viện, và theo các sự kiện dịch tễ học. Evidently so sánh phân phối của dữ liệu hiện tại với reference dataset và phát hiện khi nào model bắt đầu "lạc hậu" so với thực tế. Drift được tính per-feature: Wasserstein distance cho numerical features (BMI, glucose, creatinine...), Jensen-Shannon distance cho categorical features. Nếu `drift_score` vượt ngưỡng HIGH (>0.5), Celery sẽ trigger retrain sớm bất kể điều kiện số mẫu thông thường.
 
-Trường `rcount` thể hiện số lần bệnh nhân đã từng nhập viện trước đó và là một trong các features quan trọng ảnh hưởng đến kết quả dự đoán LOS. Hệ thống sử dụng **số CCCD** làm định danh chính để tra cứu lịch sử vì đây là thông tin duy nhất, chính xác và không thể trùng lặp giữa các bệnh nhân khác nhau, khắc phục hoàn toàn trường hợp trùng họ tên hoặc ngày sinh.
+#### SHAP — Explainability
 
-Luồng xử lý diễn ra tự động ngay khi nhân viên y tế nhập số CCCD vào form, không cần chờ đến khi lưu hồ sơ:
+SHAP (SHapley Additive exPlanations) được tích hợp vào Evaluation step sau mỗi lần retrain. SHAP tính đóng góp của từng feature vào kết quả dự đoán, trả lời câu hỏi "tại sao mô hình dự đoán bệnh nhân này nằm viện 7 ngày?". Kết quả mean absolute SHAP values được log vào MLflow dưới dạng bar chart. Trong y tế, SHAP giúp bác sĩ và quản trị bệnh viện tin tưởng vào hệ thống hơn, đồng thời phát hiện sớm khi model đang phụ thuộc vào feature không hợp lý về mặt y học.
 
-Hệ thống tra cứu trong MongoDB theo số CCCD vừa nhập. Nếu không tìm thấy bất kỳ hồ sơ nào khớp, đây là lần nhập viện đầu tiên và `rcount` được tự động đặt là 0. Nếu tìm thấy các hồ sơ cũ có cùng CCCD và đã ở trạng thái xuất viện, hệ thống đếm tổng số hồ sơ đó và gán giá trị tương ứng vào `rcount`. Đồng thời, một thông báo xuất hiện ngay trên form để nhân viên y tế biết bệnh nhân này đã có lịch sử điều trị trước đó, kèm theo nút xem nhanh danh sách các lần nhập viện cũ nếu cần đối chiếu.
+#### GitHub Actions — CI/CD Pipeline
 
-Ví dụ minh họa với bệnh nhân có CCCD `001234567890`:
+GitHub Actions với self-hosted runner tự động hóa toàn bộ ML workflow khi có code thay đổi trên nhánh `main`. Pipeline gồm các job tuần tự: (1) chạy unit tests, (2) Feast materialize cập nhật Online Store, (3) trigger Celery retrain và chờ kết quả, (4) so sánh metrics với @champion hiện tại, (5) register model mới vào MLflow Registry với alias @staging, (6) promote lên @champion nếu metrics cải thiện. Không cần thao tác thủ công từ người dùng.
 
-- Lần nhập viện 1 → không tìm thấy CCCD trong hệ thống → `rcount = 0`
-- Lần nhập viện 2 → tìm thấy 1 hồ sơ cũ đã xuất viện → `rcount = 1`  
-- Lần nhập viện 3 → tìm thấy 2 hồ sơ cũ đã xuất viện → `rcount = 2`
+#### FastAPI — Model Serving
 
-Trường `rcount` trên form sẽ ở trạng thái **chỉ đọc** (read-only), nhân viên y tế không thể chỉnh sửa thủ công để đảm bảo tính nhất quán của dữ liệu đưa vào mô hình dự đoán.
+FastAPI được tách ra làm một service độc lập, chuyên nhận request inference và trả về kết quả. Điều này tách biệt model serving khỏi Django application, cho phép scale hai service độc lập và deploy model mới mà không cần restart Django. FastAPI load model từ MLflow Registry theo alias `@champion`, lấy features từ Feast Online Store, và trả về prediction kèm SHAP explanation cho từng request nếu cần.
 
-Ngay sau khi lưu, hệ thống tự động gọi mô hình ML để dự đoán LOS và tính ngày dự kiến xuất viện. Kết quả được hiển thị ngay cho nhân viên y tế.
+#### SGDRegressor — Nâng cấp model
 
-#### ✏️ [CẬP NHẬT] Danh sách và theo dõi bệnh nhân
-
-Trang danh sách hiển thị toàn bộ bệnh nhân kèm trạng thái, số ngày đã nằm viện, số ngày dự đoán còn lại và mức độ cảnh báo. Người dùng có thể lọc theo trạng thái, cơ sở y tế, khoảng thời gian và tìm kiếm theo mã hoặc thông tin bệnh nhân.
-
-**Tính năng lọc theo trạng thái (Filter):** Trang danh sách cung cấp bộ lọc nhanh cho phép nhân viên y tế chọn xem nhóm bệnh nhân nào cần hiển thị. Có ba tùy chọn lọc chính:
-
-- **Tất cả** — hiển thị toàn bộ hồ sơ trong hệ thống, mặc định khi vào trang
-- **Đang điều trị** — chỉ hiển thị những bệnh nhân có trạng thái `admitting`, tức đang nằm viện và chưa xuất viện
-- **Đã xuất viện** — chỉ hiển thị những bệnh nhân có trạng thái `discharged`, kèm theo thông tin ngày xuất viện thực tế và sai lệch dự đoán
-
-Bộ lọc này hoạt động phía backend, tức là khi người dùng chọn một tùy chọn, frontend gửi request kèm tham số `?status=admitting` hoặc `?status=discharged` lên API, backend thực hiện truy vấn MongoDB với điều kiện tương ứng và trả về đúng tập dữ liệu cần thiết, tránh tải thừa dữ liệu không cần thiết.
-
-Mỗi bệnh nhân được gán một trong ba mức cảnh báo dựa trên ngày dự kiến xuất viện:
-
-- **Bình thường** — còn hơn 2 ngày so với ngày dự kiến
-- **Sắp đến hạn** — còn 1 đến 2 ngày, được highlight màu vàng
-- **Quá hạn** — đã qua ngày dự kiến mà chưa xuất viện, được highlight màu đỏ
-
-#### ✏️ [CẬP NHẬT] Ràng buộc dữ liệu đầu vào (Validation)
-
-Hệ thống áp dụng các ràng buộc kiểm tra dữ liệu ở cả hai lớp frontend và backend để đảm bảo tính toàn vẹn của dữ liệu đưa vào mô hình dự đoán. Các ràng buộc được áp dụng như sau:
-
-**Trường Chẩn đoán phụ ngoài ICD-9 (`secondarydiagnosisnonicd9`):**
-Trường này là bắt buộc, không được phép để trống. Giá trị nhập vào phải là số nguyên (integer) trong khoảng từ 0 đến 10. Hệ thống từ chối mọi giá trị để trống, giá trị thập phân, chuỗi ký tự hoặc số âm. Thông báo lỗi cụ thể sẽ hiển thị ngay dưới ô nhập liệu khi người dùng vi phạm ràng buộc này mà không cần chờ submit form.
-
-**Trường Số điện thoại (`phone_number`):**
-Số điện thoại phải đúng định dạng số điện thoại Việt Nam gồm đúng 10 chữ số, bắt đầu bằng số `0`. Hệ thống từ chối mọi giá trị ít hơn hoặc nhiều hơn 10 chữ số, không bắt đầu bằng `0`, hoặc chứa ký tự không phải số. Ví dụ hợp lệ: `0912345678`, `0398765432`. Ví dụ không hợp lệ: `912345678` (thiếu số 0 đầu), `09123456789` (11 số), `0912-345-678` (có dấu gạch ngang).
-
-**Trường Ngày giờ xuất viện (`actual_discharge_date`):**
-Khi nhân viên y tế xác nhận xuất viện cho bệnh nhân, trường ngày giờ xuất viện chỉ cho phép chọn các mốc thời gian từ hiện tại trở về quá khứ. Hệ thống tự động khóa không cho chọn bất kỳ thời điểm nào ở tương lai vì ngày xuất viện là sự kiện đã xảy ra trong thực tế, không thể xác nhận trước. Ngoài ra, ngày xuất viện cũng phải lớn hơn hoặc bằng ngày nhập viện của cùng hồ sơ đó, tránh trường hợp nhập liệu sai dẫn đến `actual_los` ra giá trị âm.
-
-**Cột "Còn lại" trên dashboard:**
-Giá trị số ngày còn lại đến ngày dự kiến xuất viện được làm tròn và hiển thị tối đa **2 chữ số sau dấu phẩy** trước khi trả về frontend. Việc làm tròn được thực hiện ở tầng serializer của Django REST Framework, đảm bảo frontend luôn nhận giá trị sạch như `2.97` thay vì chuỗi số dài không cần thiết như `2.9699999999999998`.
-
-#### ✏️ [CẬP NHẬT] Xác nhận xuất viện
-
-Khi bệnh nhân xuất viện, nhân viên y tế thực hiện xác nhận bằng cách nhập ngày giờ xuất viện thực tế và tình trạng ra viện (khỏi bệnh, chuyển viện, xin về, tử vong). Hệ thống tự động tính thời gian nằm viện thực tế, so sánh với dự đoán ban đầu và hiển thị mức độ sai lệch. Dữ liệu này sau đó được đưa vào vùng đệm để phục vụ việc cải thiện mô hình.
-
-#### ✏️ [CẬP NHẬT] Chỉnh sửa hồ sơ bệnh nhân
-
-Nhân viên y tế có thể chỉnh sửa thông tin hồ sơ bệnh nhân sau khi đã tạo, phục vụ các trường hợp nhập sai dữ liệu hoặc cập nhật chỉ số xét nghiệm mới. Hệ thống phân chia thành hai nhóm trường có chính sách chỉnh sửa khác nhau.
-
-**Nhóm được phép chỉnh sửa tự do** bao gồm các thông tin hành chính và lâm sàng như họ tên, số điện thoại, ngày sinh, mã cơ sở y tế, chỉ số xét nghiệm, danh sách bệnh lý kèm theo và chẩn đoán phụ ngoài ICD-9.
-
-**Nhóm không được phép chỉnh sửa** bao gồm mã bệnh nhân EID, số CCCD (ảnh hưởng trực tiếp đến logic tính rcount), ngày giờ nhập viện, kết quả dự đoán LOS và version model đã dùng. Những trường này ở trạng thái read-only trên form chỉnh sửa.
-
-Nếu nhân viên y tế chỉnh sửa bất kỳ trường nào thuộc nhóm features đầu vào của mô hình, hệ thống sẽ tự động **chạy lại dự đoán LOS** với bộ features mới và cập nhật lại `predicted_los` cùng `predicted_discharge_date`. Hệ thống sẽ hiển thị thông báo xác nhận trước khi thực hiện để nhân viên y tế biết rằng kết quả dự đoán sẽ thay đổi.
-
-Chỉ bệnh nhân có trạng thái **đang điều trị** mới được phép chỉnh sửa hồ sơ. Bệnh nhân đã xuất viện sẽ bị khóa toàn bộ form chỉnh sửa để bảo toàn tính nhất quán của dữ liệu lịch sử dùng cho retrain.
+Linear Regression (`sklearn.linear_model.LinearRegression`) được thay bằng `SGDRegressor` hỗ trợ `partial_fit()`. Thay vì Celery load toàn bộ dataset vào RAM để retrain, `partial_fit()` cho phép train incremental — chỉ cần load `stream_buffer` (lượng nhỏ) và cập nhật weights của model hiện tại. Điều này giải quyết vấn đề OOM khi dataset lớn dần, đồng thời giảm thời gian retrain đáng kể.
 
 ---
 
-### 3.3 Dự đoán và ML Streaming
+## 3. Kiến trúc hệ thống nâng cấp
 
-#### Cơ chế dự đoán
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        DATA PIPELINE                            │
+│                                                                 │
+│  Raw Data ──► DVC Snapshot ──► Parquet (Offline Store)         │
+│                    │                    │                       │
+│               MinIO S3            Feast Feature                 │
+│               (remote)            Views / Entity               │
+│                                        │                       │
+│                                   Materialize                   │
+│                                        │                       │
+│                                  Redis Online Store             │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ Training Features
+┌────────────────────────────▼────────────────────────────────────┐
+│                       MODEL PIPELINE                            │
+│                                                                 │
+│  Celery Task ──► SGDRegressor Training ──► Evaluation          │
+│                        │                  (MAE/RMSE/R²/SHAP)   │
+│                         └──────────► MLflow Run                │
+│                                      (log params+metrics+       │
+│                                       artifacts to MinIO)       │
+│                                           │                     │
+│                                    MLflow Registry              │
+│                                    @staging ──► @champion       │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ @champion model
+┌────────────────────────────▼────────────────────────────────────┐
+│                      SERVING PIPELINE                           │
+│                                                                 │
+│  Patient ──► Nginx ──► Django API ──► FastAPI Inference        │
+│                                            │       │            │
+│                                       Feast    MLflow          │
+│                                    get_online  load_model      │
+│                                    _features() @champion       │
+│                                            │                   │
+│                                     Prediction + SHAP          │
+│                                            │                   │
+│                              Evidently AI Monitoring            │
+│                              /monitor/drift endpoint            │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ drift detected / threshold met
+┌────────────────────────────▼────────────────────────────────────┐
+│                       CI/CD PIPELINE                            │
+│                                                                 │
+│  GitHub Push / Scheduled ──► GitHub Actions Runner             │
+│                              │                                  │
+│                   ┌──────────▼──────────────────┐             │
+│                   │ feast materialize             │             │
+│                   │ celery trigger retrain        │             │
+│                   │ compare metrics vs @champion  │             │
+│                   │ register @staging             │             │
+│                   │ promote to @champion          │             │
+│                   └─────────────────────────────┘             │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-Mỗi khi tạo hồ sơ bệnh nhân mới, hệ thống lấy các features từ form, đưa qua bước tiền xử lý, rồi nạp vào mô hình hồi quy tuyến tính đang được kích hoạt để lấy kết quả dự đoán. Kết quả được lưu cùng hồ sơ bệnh nhân và ghi nhận version mô hình nào đã được dùng để dự đoán, phục vụ việc so sánh sau này.
+---
 
-#### ✏️ [CẬP NHẬT] Vùng đệm dữ liệu (Stream Buffer)
+## 4. Các pipeline chi tiết
 
-Sau mỗi lần bệnh nhân xuất viện, dữ liệu gồm features đầu vào và thời gian nằm viện thực tế được thêm vào vùng đệm. Vùng đệm đóng vai trò tích lũy dữ liệu thực tế cho đến khi đủ điều kiện để tiến hành retrain, tránh việc retrain quá thường xuyên gây tốn tài nguyên trong khi lượng dữ liệu bổ sung chưa đủ để tạo ra sự thay đổi có ý nghĩa cho mô hình.
+### 4.1 Data Pipeline
 
-#### ✏️ [CẬP NHẬT] Điều kiện kích hoạt Retrain
+Data Pipeline chịu trách nhiệm đảm bảo dữ liệu được chuẩn hóa, có phiên bản, và sẵn sàng cho cả training lẫn serving với cùng một định nghĩa feature.
 
-Hệ thống không retrain sau mỗi dòng dữ liệu mới mà sẽ tự động kích hoạt quá trình retrain khi thỏa mãn một trong hai điều kiện sau:
+**Bước 1 — Chuẩn bị dữ liệu:** Dataset gốc từ bệnh viện được xử lý qua các bước handle missing values, type casting, feature engineering (tính `rcount` từ lịch sử CCCD), và EDA. Output là file Parquet với `event_timestamp` để Feast biết thời điểm của từng record.
 
-**Điều kiện 1 — Đủ ngưỡng số mẫu:** Vùng đệm tích lũy đủ số bản ghi mới theo ngưỡng đã cấu hình kể từ lần retrain gần nhất. Ngưỡng mặc định khi khởi tạo hệ thống là 10 mẫu, tuy nhiên quản trị viên có thể điều chỉnh lại bất kỳ lúc nào thông qua giao diện cài đặt (xem mục Cấu hình ngưỡng retrain bên dưới).
+**Bước 2 — DVC Snapshot:** File Parquet được DVC track (`dvc add`) và đẩy lên MinIO remote (`dvc push`). Git commit liên kết code version với data version. Điều này cho phép `dvc pull` về đúng dataset của bất kỳ Git commit nào trong lịch sử.
 
-**Điều kiện 2 — Đủ thời gian chờ:** Đã qua 7 ngày kể từ lần retrain cuối mà chưa đủ số mẫu theo ngưỡng. Điều kiện này đảm bảo mô hình vẫn được cập nhật định kỳ ngay cả khi cơ sở y tế có ít bệnh nhân, tránh trường hợp mô hình không bao giờ được cải thiện do không đạt ngưỡng số mẫu.
+**Bước 3 — Feast Setup:** Feast được khởi tạo với Entity là `patient_cccd`, Data Source trỏ vào file Parquet, Feature Views định nghĩa các nhóm features (demographics, lab results, comorbidities). `feast apply` đăng ký schema vào Feast Registry.
 
-Khi một trong hai điều kiện trên được thỏa mãn, hệ thống tự động đưa tác vụ retrain vào hàng đợi Celery để xử lý trong nền mà không làm gián đoạn hoạt động bình thường của ứng dụng.
+**Bước 4 — Materialize:** `feast materialize-incremental` đồng bộ dữ liệu mới từ Offline Store vào Redis Online Store. Bước này được chạy tự động bởi GitHub Actions khi có data mới, đảm bảo Online Store luôn cập nhật.
 
-#### ✏️ [CẬP NHẬT] Cấu hình ngưỡng số mẫu tự động retrain
+**Kết quả:** Model training gọi `store.get_historical_features()` từ Offline Store; inference gọi `store.get_online_features()` từ Redis — cùng một định nghĩa, không có skew.
 
-Do lượng dữ liệu tích lũy theo thời gian ngày càng lớn, thời gian mỗi lần retrain sẽ kéo dài hơn. Để linh hoạt điều chỉnh tần suất retrain phù hợp với thực tế vận hành, hệ thống cung cấp tính năng cho phép quản trị viên tự cấu hình ngưỡng số mẫu kích hoạt retrain mà không cần sửa code.
+### 4.2 Model Pipeline
 
-Cấu hình này được lưu trong MongoDB dưới dạng một document cài đặt hệ thống (collection `system_config`), bao gồm các tham số sau:
+Model Pipeline bao gồm toàn bộ vòng đời từ training đến registry, được MLflow làm trung tâm.
 
-- **`retrain_threshold`** — số mẫu mới tối thiểu cần có trong buffer để trigger retrain (mặc định: 10)
-- **`retrain_interval_days`** — số ngày tối đa chờ đợi trước khi retrain dù chưa đủ mẫu (mặc định: 7)
+**Training:** Celery task khởi tạo MLflow Run, log hyperparameters của SGDRegressor, chạy `partial_fit()` với stream buffer data (hoặc full retrain nếu là lần đầu), lưu model artifact vào MinIO qua `mlflow.sklearn.log_model()`.
 
-Quản trị viên có thể thay đổi các giá trị này trực tiếp từ giao diện trang Cài đặt hệ thống mà không cần khởi động lại server. Sau khi lưu, giá trị mới có hiệu lực ngay cho lần kiểm tra điều kiện retrain tiếp theo.
+**Evaluation:** Sau training, Celery chạy evaluation trên test split, log MAE, RMSE, R² vào MLflow Run. SHAP LinearExplainer được chạy để tính feature importance, kết quả được log dưới dạng bar chart artifact. Confusion-style residual plot cũng được lưu.
 
-Gợi ý điều chỉnh ngưỡng theo quy mô dữ liệu:
+**Registration:** Nếu MAE mới không tệ hơn @champion hiện tại, model được register vào MLflow Registry với alias `@staging`. Quản trị viên có thể xem chi tiết trên MLflow UI trước khi quyết định promote.
 
-| Tổng số bản ghi trong DB | Ngưỡng đề xuất | Lý do |
+**Promotion:** GitHub Actions (hoặc thủ công qua admin panel) chuyển alias từ `@staging` sang `@champion`. FastAPI service tự động reload model mới từ Registry mà không cần restart.
+
+### 4.3 Serving Pipeline
+
+**Request Flow:** Bệnh nhân nhập viện → nhân viên y tế submit form → Django API validate dữ liệu → gọi FastAPI inference service → FastAPI lấy features từ Feast Online Store (Redis) → load @champion model từ MLflow Registry → trả về LOS prediction + top 3 SHAP features giải thích → Django lưu kết quả vào MongoDB.
+
+**Drift Monitoring:** Sau mỗi ca xuất viện, dữ liệu thực tế được append vào `current_data.csv`. Celery Beat task hàng tuần chạy Evidently Report so sánh `current_data.csv` với `reference_data.csv`. Kết quả drift được expose qua endpoint `/monitor/drift?format=html` (HTML dashboard) và `/monitor/drift?format=json` (JSON để tích hợp alerting). Nếu `overall_drift_score > 0.5`, Celery tự động trigger retrain sớm và thông báo cho quản trị viên.
+
+### 4.4 CI/CD Pipeline
+
+GitHub Actions với self-hosted runner (server bệnh viện hoặc máy tính developer) được kích hoạt theo hai hướng: tự động khi push lên `main`, và theo lịch (cron) hàng tuần để cập nhật Feast.
+
+```yaml
+# Tóm tắt workflow
+jobs:
+  test:         # Unit tests, lint
+  feast:        # feast materialize-incremental
+  retrain:      # Trigger Celery retrain task, chờ kết quả
+  register:     # Đăng ký model mới vào MLflow Registry @staging
+  promote:      # Promote @staging → @champion nếu metrics cải thiện
+  deploy:       # Restart FastAPI service để load @champion mới
+```
+
+---
+
+## 5. Chức năng chi tiết (giữ nguyên từ v1)
+
+Tất cả chức năng từ v1.0 được giữ nguyên hoàn toàn ở tầng nghiệp vụ. Phần này liệt kê tóm tắt để tham chiếu.
+
+**Module Xác thực:** JWT Token, phân quyền Bác sĩ/Y tá và Quản trị viên, đăng nhập/đăng xuất, đổi mật khẩu.
+
+**Module Bệnh nhân:** Tạo hồ sơ nhập viện (auto EID, auto rcount qua CCCD), danh sách với filter trạng thái, cảnh báo 3 mức (bình thường/vàng/đỏ), validation đầy đủ (phone VN, ngày xuất viện không tương lai, secondarydiagnosis integer), chỉnh sửa hồ sơ với re-predict tự động, xác nhận xuất viện.
+
+**Module ML Streaming:** Stream buffer tích lũy dữ liệu sau xuất viện, kích hoạt retrain theo ngưỡng mẫu (cấu hình được) hoặc 7 ngày, đánh dấu buffer đã dùng, lịch sử version model.
+
+**Module Dashboard:** Thống kê tức thời, biểu đồ LOS dự đoán vs thực tế, danh sách cảnh báo ưu tiên.
+
+**Tính năng mới thêm ở tầng nghiệp vụ (v2.0):**
+
+Trang admin có thêm tab **MLflow Dashboard** với link trực tiếp đến MLflow UI để xem experiment history. Tab **Drift Report** hiển thị kết quả Evidently của lần chạy gần nhất. Tab **Model Explanation** cho phép quản trị viên xem SHAP feature importance của @champion hiện tại. Khi bác sĩ xem chi tiết một bệnh nhân, hệ thống hiển thị thêm phần **"Lý do dự đoán"** với top 3 features có ảnh hưởng lớn nhất đến LOS của bệnh nhân đó (dựa trên SHAP individual explanation).
+
+---
+
+## 6. Cơ sở dữ liệu & Lưu trữ
+
+### 6.1 MongoDB (giữ nguyên + mở rộng)
+
+Các collection từ v1 được giữ nguyên: `patients`, `users`, `model_versions`, `stream_buffer`, `system_config`.
+
+Collection `model_versions` được mở rộng thêm trường `mlflow_run_id` và `mlflow_model_uri` để liên kết với MLflow Registry. Collection `stream_buffer` thêm trường `dvc_snapshot_id` để biết record này thuộc data snapshot nào. Collection mới `drift_reports` lưu tóm tắt kết quả Evidently của mỗi lần chạy (full report lưu trong MinIO).
+
+### 6.2 PostgreSQL (mới)
+
+PostgreSQL làm metadata backend cho MLflow Server. Lưu trữ toàn bộ thông tin về experiments, runs, params, metrics, và model registry. PostgreSQL được chọn thay SQLite vì hỗ trợ concurrent access từ nhiều Celery worker.
+
+### 6.3 MinIO (mới)
+
+MinIO lưu trữ hai loại data: (1) MLflow artifacts — model files, charts, SHAP plots, Evidently HTML reports; (2) DVC remote — dataset versions, parquet files, stream buffer snapshots. MinIO expose S3-compatible API, cho phép DVC và MLflow dùng chung cơ sở hạ tầng lưu trữ.
+
+### 6.4 Redis (mở rộng)
+
+Redis từ v1 đã được dùng làm Celery broker. Trong v2.0, Redis đảm nhận thêm vai trò Feast Online Store — lưu features của từng bệnh nhân để inference lấy tức thì qua `get_online_features()` mà không cần query MongoDB.
+
+### 6.5 Feast Registry
+
+Feast Registry (`registry.db`) lưu metadata về Feature Views, Entities, và Data Sources. Trong v2.0, registry được lưu trên MinIO để chia sẻ giữa các môi trường dev/staging/production.
+
+---
+
+## 7. Bảng so sánh hệ thống cũ và mới
+
+### 7.1 So sánh kiến trúc tổng thể
+
+| Tiêu chí | v1.0 (Cũ) | v2.0 (Mới) | Mức độ thay đổi |
+|---|---|---|---|
+| **Kiến trúc** | Monolith Django | Microservices (Django + FastAPI) | 🔴 Lớn |
+| **ML Maturity Level** | Level 1.5 | Level 3 | 🔴 Lớn |
+| **Model Serving** | Django view trực tiếp | FastAPI service độc lập | 🔴 Lớn |
+| **Containerization** | Không | Docker Compose toàn bộ | 🔴 Lớn |
+| **Feature Management** | Query MongoDB thủ công | Feast Feature Store | 🔴 Lớn |
+| **Artifact Storage** | Local filesystem | MinIO S3 | 🔴 Lớn |
+| **CI/CD** | Không có | GitHub Actions tự động | 🔴 Lớn |
+| **Core Business Logic** | Django + MongoDB | Django + MongoDB (giữ nguyên) | 🟢 Không đổi |
+
+### 7.2 So sánh Data Pipeline
+
+| Tiêu chí | v1.0 (Cũ) | v2.0 (Mới) |
 |---|---|---|
-| Dưới 500 | 10 mẫu | Dữ liệu ít, retrain nhanh, nên cập nhật thường xuyên |
-| 500 — 2.000 | 20 — 30 mẫu | Cân bằng giữa tần suất và tốc độ |
-| Trên 2.000 | 50+ mẫu | Dữ liệu lớn, mỗi lần retrain tốn thời gian, nên giảm tần suất |
+| **Dataset versioning** | Không có | DVC + MinIO remote |
+| **Feature định nghĩa** | Rải rác trong Django views | Tập trung trong Feast Feature Views |
+| **Training-Serving consistency** | Không đảm bảo (có thể skew) | Đảm bảo qua cùng Feast API |
+| **Feature retrieval lúc inference** | Query MongoDB (chậm, không nhất quán) | Redis Online Store qua `get_online_features()` |
+| **rcount computation** | Tính thủ công lúc nhập viện | Pre-computed trong Feast, update sau xuất viện |
+| **Reproducibility** | Không thể tái tạo dataset cũ | DVC snapshot liên kết với MLflow Run ID |
 
-#### ✏️ [CẬP NHẬT] Retrain mô hình
+### 7.3 So sánh Model Pipeline
 
-Quá trình retrain lấy toàn bộ dữ liệu lịch sử từ MongoDB bao gồm cả dataset gốc và các ca thực tế đã tích lũy, huấn luyện lại mô hình hồi quy tuyến tính, đánh giá kết quả trên tập kiểm thử, và chỉ kích hoạt version mới nếu chỉ số MAE không tệ hơn version hiện tại. File mô hình mới được lưu lại và thông tin về hiệu suất được ghi vào lịch sử version. Các bản ghi trong vùng đệm đã được dùng để retrain sẽ được đánh dấu để không tính vào lần retrain tiếp theo.
+| Tiêu chí | v1.0 (Cũ) | v2.0 (Mới) |
+|---|---|---|
+| **Model algorithm** | LinearRegression (full retrain) | SGDRegressor (incremental `partial_fit`) |
+| **Experiment tracking** | Không có | MLflow — log params, metrics, artifacts |
+| **Artifact storage** | File `.pkl` trên local disk | MLflow + MinIO |
+| **Model versioning** | Flag `is_active` trong MongoDB | MLflow Registry với alias (@staging/@champion) |
+| **Staging environment** | Không có | @staging → test → promote @champion |
+| **Rollback model** | Phải sửa code/database thủ công | Thay alias trong MLflow (< 1 phút) |
+| **Experiment comparison** | Không thể | Side-by-side trên MLflow UI |
+| **Explainability** | Không có | SHAP log vào MLflow sau mỗi retrain |
+| **RAM khi retrain** | Load toàn bộ DB vào pandas | Chỉ load stream_buffer (nhỏ) qua partial_fit |
 
-Ngoài retrain tự động, quản trị viên cũng có thể kích hoạt retrain thủ công bất kỳ lúc nào từ giao diện quản lý mà không cần chờ đủ điều kiện.
+### 7.4 So sánh Monitoring & Observability
 
-#### Lịch sử version mô hình
+| Tiêu chí | v1.0 (Cũ) | v2.0 (Mới) |
+|---|---|---|
+| **Data drift detection** | Không có | Evidently AI — weekly report |
+| **Feature drift** | Không có | Per-feature drift score (Wasserstein / J-S distance) |
+| **Model performance monitoring** | Xem MAE thủ công trong admin | Evidently classification metrics tự động |
+| **Drift-triggered retrain** | Không có | Tự động trigger khi drift_score > 0.5 |
+| **Prediction explanation** | Không có | SHAP individual explanation per patient |
+| **Model performance history** | Bảng model_versions trong MongoDB | MLflow UI với biểu đồ theo thời gian |
+| **Alert khi model suy giảm** | Không có | Celery alert + admin notification |
 
-Hệ thống lưu lại thông tin của từng version mô hình bao gồm thời điểm huấn luyện, số mẫu dùng để train, các chỉ số MAE, RMSE, R² và trạng thái đang active hay không. Quản trị viên có thể xem so sánh hiệu suất giữa các version theo thời gian.
+### 7.5 So sánh DevOps & Vận hành
+
+| Tiêu chí | v1.0 (Cũ) | v2.0 (Mới) |
+|---|---|---|
+| **Deploy model mới** | Restart Django server thủ công | GitHub Actions tự động, zero-downtime |
+| **CI/CD** | Không có | GitHub Actions — test + train + deploy |
+| **Phụ thuộc giữa services** | Không rõ ràng | Docker Compose với dependency graph |
+| **Scale serving** | Chỉ scale Django | Scale FastAPI độc lập |
+| **Monitoring infrastructure** | Không có | MLflow UI + Evidently dashboard |
+| **Log tập trung** | Django log file | Structured logging qua MLflow + Celery |
+
+### 7.6 So sánh trải nghiệm người dùng
+
+| Tính năng | v1.0 (Cũ) | v2.0 (Mới) |
+|---|---|---|
+| **Xem lịch sử model** | Bảng đơn giản trong admin | MLflow UI với biểu đồ đầy đủ |
+| **Lý do dự đoán** | Không có | Top 3 SHAP features cho từng bệnh nhân |
+| **Cảnh báo drift** | Không có | Dashboard hiển thị drift status + level |
+| **Kích hoạt retrain thủ công** | Nút trong admin | Nút trong admin + GitHub Actions |
+| **Xem drift report** | Không có | HTML report đầy đủ từ Evidently |
+| **So sánh model versions** | Không thể | Side-by-side trong MLflow UI |
+
+### 7.7 So sánh độ rủi ro và an toàn
+
+| Rủi ro | v1.0 (Cũ) | v2.0 (Mới) |
+|---|---|---|
+| **Model hoạt động kém mà không biết** | ❌ Không phát hiện | ✅ Evidently cảnh báo sớm |
+| **Không thể rollback model lỗi** | ❌ Tốn nhiều thời gian | ✅ Đổi alias trong < 1 phút |
+| **Training-serving skew** | ❌ Có thể xảy ra | ✅ Feast loại bỏ hoàn toàn |
+| **Mất model file** | ❌ Không có backup | ✅ MinIO với redundancy |
+| **Data drift trong y tế** | ❌ Không phát hiện | ✅ Weekly automated check |
+| **Bác sĩ không tin model** | ❌ Black box | ✅ SHAP giải thích rõ ràng |
+| **OOM khi dataset lớn** | ❌ Celery crash | ✅ Incremental learning |
 
 ---
 
-### 3.4 Dashboard và thống kê
+## 8. Lộ trình triển khai
 
-Dashboard cung cấp cái nhìn tổng quan về hoạt động hệ thống với các thông tin sau:
+### Giai đoạn 1 — Foundation (Tuần 1-2)
 
-**Thống kê tức thời** bao gồm tổng số bệnh nhân đang nằm viện, số bệnh nhân xuất viện trong ngày, số ca quá hạn cần chú ý và sai lệch dự đoán trung bình của tháng hiện tại.
+Mục tiêu: Có MLflow hoạt động và mọi retrain được log đầy đủ.
 
-**Biểu đồ phân tích** bao gồm đồ thị so sánh LOS dự đoán và thực tế theo thời gian, biểu đồ phân phối sai lệch dự đoán, và biểu đồ hiệu suất mô hình qua các lần retrain.
+Công việc: Cài đặt Docker Compose với MLflow Server + MinIO + PostgreSQL. Sửa Celery retrain task thêm khoảng 20 dòng MLflow logging. Migrate model từ local `.pkl` sang MLflow Registry. Thiết lập alias @champion cho model hiện tại.
 
-**Danh sách cảnh báo** liệt kê tất cả bệnh nhân đang ở mức cảnh báo vàng hoặc đỏ, sắp xếp theo mức độ ưu tiên để nhân viên y tế dễ dàng theo dõi và xử lý.
+Kết quả kiểm chứng: Mọi lần retrain xuất hiện trong MLflow UI với đầy đủ metrics và model artifact.
+
+### Giai đoạn 2 — Monitoring (Tuần 3-5)
+
+Mục tiêu: Có drift monitoring tự động và SHAP explanation.
+
+Công việc: Tạo `reference_data.csv` từ dataset gốc. Thêm Evidently vào Celery Beat task hàng tuần. Tích hợp drift score vào điều kiện trigger retrain. Thêm SHAP vào Evaluation step trong Celery task. Log SHAP artifacts vào MLflow. Thêm API endpoint `/monitor/drift` trong FastAPI.
+
+Kết quả kiểm chứng: Sau 1 tuần chạy, Evidently tạo được report đầu tiên. SHAP chart xuất hiện trong MLflow artifacts.
+
+### Giai đoạn 3 — Data Versioning (Tuần 6-8)
+
+Mục tiêu: Mọi dataset có version, reproducible.
+
+Công việc: Khởi tạo DVC trong repo. Thêm MinIO làm DVC remote. Track các file dataset quan trọng. Sửa Celery retrain task để tạo DVC snapshot trước mỗi lần train và liên kết snapshot ID với MLflow Run.
+
+Kết quả kiểm chứng: Có thể checkout Git commit bất kỳ và `dvc pull` về đúng dataset tại thời điểm đó.
+
+### Giai đoạn 4 — Feature Store (Tuần 9-11)
+
+Mục tiêu: Feast quản lý features, inference dùng Redis.
+
+Công việc: Khởi tạo Feast repo với Entity `patient_cccd`. Định nghĩa Feature Views cho demographics, lab results, comorbidities. Setup Redis Online Store. Sửa FastAPI inference để dùng `get_online_features()` thay vì query MongoDB. Setup Feast materialize trong GitHub Actions.
+
+Kết quả kiểm chứng: Inference latency giảm (Redis so với MongoDB), training-serving consistency được đảm bảo.
+
+### Giai đoạn 5 — CI/CD & Production (Tuần 12-13)
+
+Mục tiêu: Tự động hóa hoàn toàn, production-ready.
+
+Công việc: Setup GitHub Actions self-hosted runner. Viết workflow YAML cho full pipeline. Tách FastAPI ra service riêng với Docker. Thêm Nginx reverse proxy. Thêm SHAP explanation vào patient detail page.
+
+Kết quả kiểm chứng: Push code lên main tự động trigger toàn bộ pipeline và deploy model mới khi metrics cải thiện.
 
 ---
-
-## 4. Luồng hoạt động tổng thể
-
-Hệ thống vận hành theo ba luồng chính song song với nhau.
-
-**Luồng nhập viện và dự đoán** bắt đầu từ lúc nhân viên y tế điền thông tin bệnh nhân, hệ thống nhận dữ liệu, gọi mô hình dự đoán, lưu kết quả và trả về ngày dự kiến xuất viện.
-
-**Luồng theo dõi hàng ngày** được tự động hóa bởi Celery Beat, mỗi sáng hệ thống quét toàn bộ danh sách bệnh nhân đang nằm viện, so sánh ngày dự kiến với ngày hiện tại, cập nhật mức độ cảnh báo và đưa lên dashboard để nhân viên y tế nắm được ai cần được chú ý trong ngày.
-
-**Luồng xuất viện và cải thiện mô hình** bắt đầu khi bệnh nhân xuất viện, hệ thống ghi nhận dữ liệu thực tế, so sánh với dự đoán, đưa vào vùng đệm và kiểm tra xem đã đủ ngưỡng retrain chưa. Nếu đủ, quá trình retrain được kích hoạt tự động trong nền mà không làm gián đoạn hoạt động của hệ thống.
-
----
-
-## 5. Cơ sở dữ liệu
-
-MongoDB được chọn vì cấu trúc dữ liệu bệnh nhân có nhiều trường tùy chọn và có thể thay đổi theo thời gian, phù hợp với tính linh hoạt của document-based database.
-
-Hệ thống sử dụng bốn collection chính. **Collection patients** lưu toàn bộ thông tin hồ sơ bệnh nhân bao gồm features đầu vào, kết quả dự đoán, thông tin xuất viện và trạng thái cảnh báo. **Collection users** quản lý tài khoản và phân quyền. **Collection model_versions** lưu lịch sử các lần train mô hình cùng chỉ số hiệu suất. **Collection stream_buffer** lưu tạm dữ liệu chờ đủ ngưỡng để retrain.
-
----
-
-## 6. Tính năng nổi bật của hệ thống
-
-Điểm khác biệt so với một hệ thống dự đoán thông thường là khả năng **tự cải thiện theo thời gian**. Mô hình không đứng yên sau khi deploy mà liên tục được cập nhật dựa trên dữ liệu thực tế từ bệnh viện, giúp dự đoán ngày càng chính xác hơn theo từng đặc thù của cơ sở y tế.
-
-**Cơ chế so sánh minh bạch** cho phép nhân viên y tế và quản trị viên luôn thấy được mức độ sai lệch giữa dự đoán và thực tế, tạo sự tin tưởng vào hệ thống và giúp phát hiện sớm khi mô hình đang hoạt động kém hiệu quả.
-
-**Hệ thống cảnh báo chủ động** giúp nhân viên y tế không cần nhớ từng ca bệnh nhân mà vẫn được thông báo kịp thời về những trường hợp cần xem xét xuất viện hoặc đã quá hạn dự kiến.
-
----
-
-## 7. Giới hạn và hướng mở rộng
-
-Ở phiên bản hiện tại, hệ thống được thiết kế cho quy mô một cơ sở y tế với lượng dữ liệu vừa và nhỏ. Mô hình hồi quy tuyến tính đơn giản phù hợp cho mục đích học thuật nhưng có thể được thay thế bằng các thuật toán phức tạp hơn như Random Forest hoặc Gradient Boosting trong tương lai.
-
-Hướng mở rộng bao gồm hỗ trợ đa cơ sở y tế với dữ liệu tách biệt, tích hợp thông báo qua email hoặc SMS khi có cảnh báo quan trọng, xuất báo cáo PDF định kỳ, và nâng cấp cơ chế streaming lên Kafka khi hệ thống cần xử lý lượng dữ liệu lớn từ nhiều nguồn đồng thời.
 
 ## QUY TẮC BẮT BUỘC
 
