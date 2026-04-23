@@ -169,6 +169,60 @@
                 </div>
             </div>
             {% endif %}
+
+            <!-- SHAP Explanation (Giai đoạn 2) -->
+            {% if shap_explanation %}
+            <div class="col-12">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-warning bg-opacity-25 fw-semibold border-bottom">
+                        <i class="bi bi-lightbulb text-warning"></i>
+                        Lý do dự đoán — Top {{ shap_explanation|length }} yếu tố ảnh hưởng
+                        <span class="badge bg-warning text-dark ms-2">SHAP</span>
+                        <small class="text-muted fw-normal ms-2">
+                            Dự đoán LOS: <strong>{{ patient.predicted_los }} ngày</strong>
+                        </small>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            {% for item in shap_explanation %}
+                            <div class="col-md-{% if shap_explanation|length >= 4 %}6{% else %}12{% endif %} col-lg-{% if shap_explanation|length >= 3 %}4{% else %}6{% endif %}">
+                                <div class="d-flex align-items-center p-3 rounded border
+                                    {% if item.shap_value > 0 %}border-danger bg-danger bg-opacity-10
+                                    {% else %}border-info bg-info bg-opacity-10{% endif %}">
+                                    <div class="me-3">
+                                        {% if item.shap_value > 0 %}
+                                        <i class="bi bi-arrow-up-circle-fill text-danger fs-4"></i>
+                                        {% else %}
+                                        <i class="bi bi-arrow-down-circle-fill text-info fs-4"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <div class="fw-semibold small">{{ item.label }}</div>
+                                        <div class="text-muted" style="font-size:0.78rem;">
+                                            {{ item.direction }} LOS
+                                            <span class="fw-bold {% if item.shap_value > 0 %}text-danger{% else %}text-info{% endif %}">
+                                                {{ item.shap_value|floatformat:2 }} ngày
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="text-end">
+                                        <span class="badge bg-secondary opacity-75">#{{ item.importance_rank }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <div class="mt-3 text-muted" style="font-size:0.8rem;">
+                            <i class="bi bi-info-circle"></i>
+                            Mũi tên <i class="bi bi-arrow-up text-danger"></i> = yếu tố này làm tăng thời gian nằm viện dự đoán.
+                            Mũi tên <i class="bi bi-arrow-down text-info"></i> = yếu tố này làm giảm thời gian nằm viện dự đoán.
+                            Giá trị tuyệt đối càng lớn, ảnh hưởng càng mạnh.
+                            <a href="{% url 'ml_engine:model_explanation' %}" class="ms-2">Xem SHAP toàn cục →</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>

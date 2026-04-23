@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+
+{% block title %}Model Explanation — SHAP{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0">
+        <i class="bi bi-lightbulb text-warning"></i> Model Explanation
+        <small class="text-muted fs-6">SHAP Feature Importance</small>
+    </h2>
+    {% if not shap_importance %}
+    <div>
+        <a href="{% url 'ml_engine:retrain' %}" class="btn btn-primary btn-sm">
+            <i class="bi bi-arrow-repeat"></i> Retrain để tạo SHAP
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+{% if not shap_importance %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i>
+    SHAP explanation chưa có. Hãy <a href="{% url 'ml_engine:retrain' %}" class="alert-link">trigger retrain</a>
+    một lần để hệ thống tính toán feature importance.
+    <br><small class="text-muted">SHAP được tính tự động sau mỗi lần retrain từ Giai đoạn 2 trở đi.</small>
+</div>
+{% else %}
+
+<!-- Active version info -->
+{% if active_version %}
+<div class="alert alert-light border mb-4">
+    <div class="row align-items-center">
+        <div class="col-auto">
+            <i class="bi bi-cpu fs-3 text-primary"></i>
+        </div>
+        <div class="col">
+            <strong>Model đang active: {{ active_version.version_number }}</strong>
+            <span class="badge bg-success ms-2">@champion</span>
+            <br>
+            <small class="text-muted">
+                Train mode: <code>{{ active_version.train_mode }}</code> |
+                MAE: <strong>{{ active_version.mae }}</strong> |
+                R²: <strong>{{ active_version.r2_score }}</strong> |
+                Trained: {{ active_version.trained_at|date:"d/m/Y H:i" }}
+            </small>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4">
+    <!-- SHAP Bar Chart -->
+    <div class="col-lg-7">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white fw-semibold border-bottom">
+                <i class="bi bi-bar-chart-horizontal"></i> Global Feature Importance (Mean |SHAP|)
+            </div>
+            <div class="card-body text-center">
+                {% if chart_b64 %}
+                <img src="data:image/png;base64,{{ chart_b64 }}" class="img-fluid" alt="SHAP Feature Importance Chart">
+                {% else %}
+                <p class="text-muted">Không tạo được biểu đồ.</p>
+                {% endif %}
+                <small class="text-muted d-block mt-2">
+                    Giá trị càng cao → feature đóng góp càng nhiều vào dự đoán LOS.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <!-- SHAP Table -->
+    <div class="col-lg-5">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white fw-semibold border-bottom">
+                <i class="bi bi-table"></i> Chi tiết Feature Importance
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height:420px; overflow-y:auto">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>#</th>
+                                <th>Feature</th>
+                                <th class="text-end">SHAP Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in shap_importance %}
+                            <tr>
+                                <td class="text-muted">{{ forloop.counter }}</td>
+                                <td>
+                                    <span class="fw-semibold">{{ item.label }}</span>
+                                    <br><code class="text-muted small">{{ item.feature }}</code>
+                                </td>
+                                <td class="text-end">
+                                    <div class="d-flex align-items-center justify-content-end gap-2">
+                                        <div class="progress flex-grow-1" style="height:6px; max-width:60px">
+                                            {% with max_val=shap_importance.0.importance %}
+                                            <div class="progress-bar bg-primary"
+                                                 style="width:{% widthratio item.importance max_val 100 %}%"></div>
+                                            {% endwith %}
+                                        </div>
+                                        <strong>{{ item.importance|floatformat:4 }}</strong>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Giải thích SHAP -->
+        <div class="card shadow-sm border-0 mt-3">
+            <div class="card-header bg-white fw-semibold border-bottom">
+                <i class="bi bi-question-circle"></i> SHAP là gì?
+            </div>
+            <div class="card-body">
+                <p class="small text-muted mb-2">
+                    <strong>SHAP</strong> (SHapley Additive exPlanations) giải thích đóng góp của từng feature
+                    vào kết quả dự đoán. Giá trị <em>Mean |SHAP|</em> cho biết feature đó trung bình
+                    ảnh hưởng bao nhiêu ngày vào LOS dự đoán.
+                </p>
+                <p class="small text-muted mb-0">
+                    Ví dụ: nếu <code>rcount</code> có SHAP = 0.8, tức là số lần tái nhập viện
+                    trung bình làm LOS thay đổi ±0.8 ngày so với baseline.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lịch sử SHAP versions -->
+    {% if versions_with_shap %}
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white fw-semibold border-bottom">
+                <i class="bi bi-clock-history"></i> Lịch sử SHAP theo phiên bản model
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Version</th>
+                                <th>Ngày train</th>
+                                <th>MAE</th>
+                                <th>Top 3 features (SHAP)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for v in versions_with_shap %}
+                            <tr {% if v.id_str == active_version_id %}class="table-success"{% endif %}>
+                                <td>
+                                    <code>{{ v.version_number }}</code>
+                                    {% if v.id_str == active_version_id %}
+                                    <span class="badge bg-success ms-1">active</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ v.trained_at|date:"d/m/Y H:i" }}</td>
+                                <td>{{ v.mae }}</td>
+                                <td>
+                                    {% for item in v.shap_feature_importance %}
+                                    {% if forloop.counter <= 3 %}
+                                    <span class="badge bg-light text-dark border me-1">
+                                        {{ item.feature }}: {{ item.importance|floatformat:3 }}
+                                    </span>
+                                    {% endif %}
+                                    {% endfor %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -124,6 +124,11 @@ MLFLOW_REGISTERED_MODEL_NAME = config('MLFLOW_REGISTERED_MODEL_NAME', default='l
 MLFLOW_AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID', default='minio_admin')
 MLFLOW_AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY', default='minio_password')
 
+# Evidently + SHAP (v2 — Giai đoạn 2 Monitoring & Explainability)
+REFERENCE_DATA_PATH = BASE_DIR / 'reference_data.csv'
+EVIDENTLY_DRIFT_THRESHOLD_HIGH = config('EVIDENTLY_DRIFT_THRESHOLD_HIGH', default=0.5, cast=float)
+EVIDENTLY_DRIFT_THRESHOLD_MEDIUM = config('EVIDENTLY_DRIFT_THRESHOLD_MEDIUM', default=0.25, cast=float)
+
 # Make MLflow S3 creds available to boto3 used by mlflow artifact upload
 os.environ.setdefault('MLFLOW_S3_ENDPOINT_URL', MLFLOW_S3_ENDPOINT_URL)
 os.environ.setdefault('AWS_ACCESS_KEY_ID', MLFLOW_AWS_ACCESS_KEY_ID)

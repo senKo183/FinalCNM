@@ -9,4 +9,8 @@ urlpatterns = [
     path('buffer/', views.stream_buffer_view, name='buffer'),
     path('settings/', views.retrain_settings_view, name='retrain_settings'),
     path('mlflow/', views.mlflow_dashboard_view, name='mlflow_dashboard'),
+    # Giai đoạn 2: Drift Monitoring + SHAP
+    path('drift/', views.drift_report_view, name='drift_report'),
+    path('drift/api/', views.drift_api_view, name='drift_api'),
+    path('explanation/', views.model_explanation_view, name='model_explanation'),
 ]

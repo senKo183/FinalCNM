@@ -72,6 +72,46 @@
   - Collection `system_config` tự động tạo document mặc định nếu chưa tồn tại (fallback về settings.py)
   - Chỉnh sửa hồ sơ không cho phép thay đổi CCCD vì ảnh hưởng trực tiếp đến logic rcount
 
+### [23/04/2026] – Tính năng Import CSV bệnh nhân hàng loạt
+- **Đã làm:**
+  - `import_csv_view`: upload file CSV → parse từng hàng → validate → predict LOS → insert MongoDB hàng loạt. Hàng lỗi bị bỏ qua, các hàng hợp lệ vẫn được import
+  - `download_csv_template`: endpoint tải file mẫu CSV (UTF-8-BOM) có 2 hàng ví dụ đầy đủ cột
+  - Hỗ trợ kéo thả file + hiển thị kết quả từng hàng (thành công / lỗi) sau khi import
+  - Encoding auto-detect: utf-8-sig, utf-8, cp1252, latin-1 — tương thích file Excel export
+  - Template `import_csv.html`: drag-and-drop upload zone, bảng hướng dẫn cột, bảng kết quả từng hàng với link xem chi tiết
+  - Nút "Import CSV" được thêm vào trang danh sách bệnh nhân
+  - Route: `GET/POST /patients/import/` và `GET /patients/import/template/`
+- **File thay đổi:** patients/views.py, patients/urls.py, templates/patients/import_csv.html (mới), templates/patients/list.html
+
+### [23/04/2026] – v2 Giai đoạn 2: Evidently Drift Monitoring + SHAP Explainability
+- **Đã làm:**
+  - **Evidently AI drift monitoring:**
+    - Tạo `reference_data.csv` từ 70% đầu của LengthOfStay.csv (70,000 rows làm reference stable)
+    - `ml_engine/drift_monitor.py` (mới): Module Evidently 0.6.x — chạy `DataDriftPreset` report, so sánh `current_data` (từ stream_buffer) với `reference_data`. Tính `overall_drift_score` (share_of_drifted_columns), per-feature drift (Wasserstein/J-S), lưu vào MongoDB collection `drift_reports`
+    - Celery Beat task `run_drift_monitoring` hàng tuần (Chủ nhật 02:00) — tự động chạy report và cảnh báo khi drift HIGH
+    - `check_retrain_conditions` mở rộng: kiểm tra `drift_reports` collection, nếu `overall_drift_score >= 0.5` trigger retrain sớm + đánh dấu `triggered_retrain=True`
+    - Admin view `/ml/drift/`: dashboard hiển thị drift level, bảng per-feature, lịch sử 10 lần gần nhất, nút "Chạy ngay"
+    - API endpoint `/ml/drift/api/?format=json|html`: trả JSON tóm tắt hoặc Evidently HTML report đầy đủ
+  - **SHAP Explainability:**
+    - `ml_engine/shap_explainer.py` (mới): tự động chọn explainer — `LinearExplainer` cho SGDRegressor, `TreeExplainer` cho GradientBoosting, `KernelExplainer` fallback. Hỗ trợ `explain_model_global()` (mean |SHAP| toàn test set) và `explain_patient()` (top-N features per bệnh nhân)
+    - `trainer.py` mở rộng: sau evaluation, chạy `_compute_shap()` → log SHAP metrics + bar chart artifact vào MLflow Run. Lưu `shap_feature_importance` list vào `model_versions` collection
+    - Admin view `/ml/explanation/`: bar chart SHAP + bảng ranking features, so sánh SHAP across versions
+    - Trang chi tiết bệnh nhân: phần "Lý do dự đoán" — top 5 features ảnh hưởng nhất đến LOS của bệnh nhân đó với hướng (+/-)
+  - **Cấu hình:**
+    - `settings.py` thêm `REFERENCE_DATA_PATH`, `EVIDENTLY_DRIFT_THRESHOLD_HIGH=0.5`, `EVIDENTLY_DRIFT_THRESHOLD_MEDIUM=0.25`
+    - `.env` thêm 2 ngưỡng drift có thể cấu hình
+    - `celery.py` thêm `weekly-drift-monitoring` beat schedule (Chủ nhật 02:00)
+  - **Navbar:** thêm link "Drift Monitor" và "SHAP Explain" cho admin
+  - `requirements.txt` thêm `evidently>=0.4,<0.7`, `shap>=0.44`, `matplotlib>=3.7`
+  - `SETUP_V3.md` (mới): hướng dẫn setup Giai đoạn 2
+- **File thay đổi:** ml_engine/drift_monitor.py (mới), ml_engine/shap_explainer.py (mới), ml_engine/trainer.py, ml_engine/tasks.py, ml_engine/views.py, ml_engine/urls.py, templates/ml_engine/drift_report.html (mới), templates/ml_engine/model_explanation.html (mới), templates/patients/detail.html, templates/base.html, patients/views.py, PredictLOSWeb/settings.py, PredictLOSWeb/celery.py, .env, requirements.txt, reference_data.csv (mới), SETUP_V3.md (mới)
+- **Lưu ý:**
+  - SHAP hiện đang hoạt động với cả GradientBoosting (v1) và SGDRegressor (v2) — tự động chọn explainer phù hợp
+  - Trang chi tiết bệnh nhân dùng `nrows=500` để tránh lag — background data nhỏ, chấp nhận độ chính xác thấp hơn
+  - Drift monitoring cần ≥10 mẫu trong stream_buffer để chạy được. Khi chưa có đủ dữ liệu, nút "Chạy ngay" sẽ báo thông báo rõ ràng
+  - Evidently 0.6.7 đã được cài (cùng với shap 0.51.0)
+  - Các Giai đoạn 3-5 (DVC, Feast, FastAPI, CI/CD) chưa triển khai
+
 ### [02/03/2026] – v2 Giai đoạn 1 Foundation: MLflow + MinIO + PostgreSQL + SGDRegressor
 - **Đã làm:**
   - Hạ tầng MLOps cơ bản (readme_los_v2.md — Giai đoạn 1 / Tuần 1-2):

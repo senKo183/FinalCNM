@@ -17,4 +17,9 @@ app.conf.beat_schedule = {
         'task': 'ml_engine.tasks.check_retrain_conditions',
         'schedule': crontab(hour=7, minute=0),
     },
+    # Giai đoạn 2: Evidently drift monitoring hàng tuần (Chủ nhật 02:00)
+    'weekly-drift-monitoring': {
+        'task': 'ml_engine.tasks.run_drift_monitoring',
+        'schedule': crontab(hour=2, minute=0, day_of_week=0),
+    },
 }

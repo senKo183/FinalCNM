@@ -2,7 +2,7 @@ from datetime import datetime
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.conf import settings
 from PredictLOSWeb.mongodb import get_collection
 from accounts.decorators import admin_required
@@ -181,3 +181,129 @@ def mlflow_dashboard_view(request):
         'champion_run_id': champion_run_id,
     }
     return render(request, 'ml_engine/mlflow_dashboard.html', context)
+
+
+# ──────────────────────────────────────────────────────────────
+#  Giai đoạn 2: Drift Monitoring + SHAP Explainability
+# ──────────────────────────────────────────────────────────────
+
+@login_required
+@admin_required
+def drift_report_view(request):
+    """Hiển thị drift report mới nhất và lịch sử 10 lần chạy gần nhất."""
+    from .drift_monitor import get_latest_drift_report, get_drift_history
+
+    if request.method == 'POST' and request.POST.get('action') == 'run_now':
+        try:
+            from .tasks import run_drift_monitoring
+            run_drift_monitoring.delay()
+            messages.success(request, 'Đã kích hoạt Evidently drift monitoring. Kết quả sẽ có sau vài giây.')
+        except Exception:
+            from .drift_monitor import run_evidently_report
+            result = run_evidently_report(save_html=True)
+            if result:
+                score = result['overall_drift_score']
+                level = result['drift_level'].upper()
+                messages.success(request, f'Drift report hoàn tất: score={score:.3f} ({level})')
+            else:
+                messages.warning(request, 'Không đủ dữ liệu để chạy drift monitoring (cần ≥10 mẫu trong stream_buffer).')
+        return redirect('ml_engine:drift_report')
+
+    latest = get_latest_drift_report()
+    history = get_drift_history(limit=10)
+
+    drift_threshold_high = getattr(settings, 'EVIDENTLY_DRIFT_THRESHOLD_HIGH', 0.5)
+    drift_threshold_medium = getattr(settings, 'EVIDENTLY_DRIFT_THRESHOLD_MEDIUM', 0.25)
+
+    context = {
+        'latest': latest,
+        'history': history,
+        'drift_threshold_high': drift_threshold_high,
+        'drift_threshold_medium': drift_threshold_medium,
+    }
+    return render(request, 'ml_engine/drift_report.html', context)
+
+
+@login_required
+@admin_required
+def model_explanation_view(request):
+    """Hiển thị SHAP global feature importance của model đang active."""
+    versions_col = get_collection('model_versions')
+
+    # Ưu tiên version có SHAP mới nhất
+    active = versions_col.find_one(
+        {'is_active': True, 'shap_feature_importance': {'$exists': True, '$ne': None}}
+    )
+    if not active:
+        active = versions_col.find_one({'is_active': True})
+
+    shap_importance = None
+    chart_b64 = None
+
+    if active and active.get('shap_feature_importance'):
+        shap_importance = active['shap_feature_importance']
+        # Tạo chart on-the-fly
+        try:
+            from .shap_explainer import generate_shap_bar_chart, chart_to_base64
+            chart_bytes = generate_shap_bar_chart(shap_importance)
+            chart_b64 = chart_to_base64(chart_bytes)
+        except Exception:
+            pass
+
+    # Nếu chưa có SHAP, tính lại ngay (chỉ khi có model SGD)
+    if not shap_importance and request.method == 'POST' and request.POST.get('action') == 'compute_shap':
+        try:
+            from .trainer import retrain_model
+            messages.info(request, 'Đang tính lại SHAP — quá trình này yêu cầu retrain model...')
+        except Exception as exc:
+            messages.error(request, f'Không thể tính SHAP: {exc}')
+
+    all_versions = list(versions_col.find(
+        {'shap_feature_importance': {'$exists': True, '$ne': None}},
+        sort=[('trained_at', -1)],
+        limit=5
+    ))
+    for v in all_versions:
+        v['id_str'] = str(v['_id'])
+
+    context = {
+        'active_version': active,
+        'shap_importance': shap_importance,
+        'chart_b64': chart_b64,
+        'versions_with_shap': all_versions,
+    }
+    if active:
+        context['active_version_id'] = str(active['_id'])
+    return render(request, 'ml_engine/model_explanation.html', context)
+
+
+@login_required
+@admin_required
+def drift_api_view(request):
+    """API endpoint: GET /ml/drift/api/?format=json|html
+
+    Trả về drift report mới nhất dưới dạng JSON hoặc HTML.
+    Tương đương /monitor/drift đã đề cập trong readme.
+    """
+    from .drift_monitor import get_latest_drift_report
+
+    fmt = request.GET.get('format', 'json')
+    report = get_latest_drift_report()
+
+    if fmt == 'json':
+        if report is None:
+            return JsonResponse({'error': 'Chưa có drift report nào.'}, status=404)
+        safe_report = {
+            k: (str(v) if hasattr(v, '__class__') and v.__class__.__name__ == 'ObjectId' else v)
+            for k, v in report.items()
+            if k not in ('_id', 'html_report')
+        }
+        safe_report['run_at'] = report.get('run_at', '').isoformat() if report.get('run_at') else None
+        return JsonResponse(safe_report)
+
+    if fmt == 'html':
+        if report and report.get('html_report'):
+            return HttpResponse(report['html_report'], content_type='text/html')
+        return HttpResponse('<h2>Chưa có HTML drift report.</h2>', content_type='text/html')
+
+    return JsonResponse({'error': 'format không hợp lệ. Dùng ?format=json hoặc ?format=html'}, status=400)

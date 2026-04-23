@@ -1,4 +1,4 @@
-"""LOS retrain — v2 Foundation.
+"""LOS retrain — v2 Giai đoạn 2 Monitoring & Explainability.
 
 Nâng cấp so với v1:
 - LinearRegression/GradientBoosting → SGDRegressor hỗ trợ partial_fit
@@ -8,6 +8,11 @@ Nâng cấp so với v1:
   @champion. Fallback ghi file .pkl local vẫn được giữ để tương thích
   predictor v1.
 - model_versions collection lưu thêm mlflow_run_id, mlflow_model_uri.
+
+Giai đoạn 2:
+- SHAP LinearExplainer tính global feature importance sau mỗi retrain.
+- SHAP bar chart được log vào MLflow artifact.
+- shap_feature_importance được lưu vào model_versions document.
 """
 from __future__ import annotations
 
@@ -186,6 +191,10 @@ def retrain_model():
 
     is_better = mae <= current_mae
 
+    # SHAP global explanation
+    shap_result = _compute_shap(model, X_train, X_test)
+
+    # Log SHAP + model vào MLflow
     mlflow_run_id, mlflow_model_uri, mlflow_version = _log_to_mlflow(
         model=model,
         new_version=new_version,
@@ -196,6 +205,7 @@ def retrain_model():
         new_samples=new_samples,
         train_mode=train_mode,
         is_better=is_better,
+        shap_result=shap_result,
     )
 
     version_doc = {
@@ -213,6 +223,9 @@ def retrain_model():
         'mlflow_run_id': mlflow_run_id,
         'mlflow_model_uri': mlflow_model_uri,
         'mlflow_registry_version': mlflow_version,
+        'shap_feature_importance': (
+            shap_result['feature_importance'] if shap_result else None
+        ),
         'description': (
             f'Retrain với {new_samples} mẫu mới' if new_samples > 0 else 'Retrain thủ công'
         ),
@@ -249,7 +262,24 @@ def retrain_model():
         'train_mode': train_mode,
         'mlflow_run_id': mlflow_run_id,
         'mlflow_model_uri': mlflow_model_uri,
+        'shap_feature_importance': (
+            shap_result['feature_importance'] if shap_result else None
+        ),
     }
+
+
+def _compute_shap(
+    model: Pipeline,
+    X_train: np.ndarray,
+    X_test: np.ndarray,
+) -> Optional[dict]:
+    """Tính SHAP global feature importance. Fail graceful nếu shap chưa cài."""
+    try:
+        from .shap_explainer import explain_model_global  # noqa: WPS433
+        return explain_model_global(model, X_train, X_test, feature_names=FEATURE_ORDER)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('SHAP computation thất bại: %s', exc)
+        return None
 
 
 def _log_to_mlflow(
@@ -263,6 +293,7 @@ def _log_to_mlflow(
     new_samples: int,
     train_mode: str,
     is_better: bool,
+    shap_result: Optional[dict] = None,
 ) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Log run + register model. Trả về (run_id, model_uri, registry_version)."""
     mlflow = get_mlflow()
@@ -297,6 +328,25 @@ def _log_to_mlflow(
             })
             mlflow.set_tag('train_mode', train_mode)
             mlflow.set_tag('improved', str(is_better))
+
+            # Log SHAP feature importance metrics
+            if shap_result and shap_result.get('feature_importance'):
+                shap_metrics = {
+                    f'shap_{item["feature"]}': item['importance']
+                    for item in shap_result['feature_importance'][:10]
+                }
+                mlflow.log_metrics(shap_metrics)
+
+                # Log SHAP bar chart artifact
+                from .shap_explainer import generate_shap_bar_chart  # noqa: WPS433
+                chart_bytes = generate_shap_bar_chart(shap_result['feature_importance'])
+                if chart_bytes:
+                    import tempfile  # noqa: WPS433
+                    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                        tmp.write(chart_bytes)
+                        tmp_path = tmp.name
+                    mlflow.log_artifact(tmp_path, 'shap')
+                    os.unlink(tmp_path)
 
             import mlflow.sklearn  # noqa: WPS433
             model_info = mlflow.sklearn.log_model(

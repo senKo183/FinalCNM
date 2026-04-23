@@ -59,6 +59,18 @@
                             <i class="bi bi-diagram-3"></i> MLflow
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'drift_report' %}active{% endif %}"
+                           href="{% url 'ml_engine:drift_report' %}">
+                            <i class="bi bi-activity"></i> Drift Monitor
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'model_explanation' %}active{% endif %}"
+                           href="{% url 'ml_engine:model_explanation' %}">
+                            <i class="bi bi-lightbulb"></i> SHAP Explain
+                        </a>
+                    </li>
                     {% endif %}
                 </ul>
                 <ul class="navbar-nav">

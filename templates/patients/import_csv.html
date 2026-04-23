@@ -1,0 +1,271 @@
+{% extends 'base.html' %}
+
+{% block title %}Import bệnh nhân từ CSV{% endblock %}
+
+{% block extra_css %}
+<style>
+.drop-zone {
+    border: 2px dashed #0d6efd;
+    border-radius: 12px;
+    padding: 2.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: background .2s;
+    background: #f8f9ff;
+}
+.drop-zone.dragover {
+    background: #e7f0ff;
+    border-color: #0a58ca;
+}
+.drop-zone input[type="file"] {
+    display: none;
+}
+.result-row-success { background-color: #d1e7dd; }
+.result-row-error   { background-color: #f8d7da; }
+.result-row-pending { background-color: #fff3cd; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0">
+        <i class="bi bi-file-earmark-arrow-up text-success"></i> Import bệnh nhân từ CSV
+    </h2>
+    <div class="d-flex gap-2">
+        <a href="{% url 'patients:csv_template' %}" class="btn btn-outline-success btn-sm">
+            <i class="bi bi-download"></i> Tải file mẫu (.csv)
+        </a>
+        <a href="{% url 'patients:list' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Quay lại
+        </a>
+    </div>
+</div>
+
+{% if not show_results %}
+<!-- Upload Form -->
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white fw-semibold border-bottom">
+                <i class="bi bi-upload"></i> Tải lên file CSV
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data" id="import-form">
+                    {% csrf_token %}
+                    <div class="drop-zone mb-3" id="drop-zone" onclick="document.getElementById('csv-input').click()">
+                        <input type="file" name="csv_file" id="csv-input" accept=".csv">
+                        <i class="bi bi-file-earmark-spreadsheet text-primary" style="font-size:3rem"></i>
+                        <div class="mt-2 fw-semibold text-primary">Kéo thả file CSV vào đây</div>
+                        <div class="text-muted small">hoặc nhấp để chọn file (tối đa 5 MB)</div>
+                        <div id="file-name" class="mt-2 fw-semibold text-success d-none"></div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary" id="submit-btn" disabled>
+                            <i class="bi bi-upload"></i> Import bệnh nhân
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="document.getElementById('csv-input').value=''; document.getElementById('file-name').classList.add('d-none'); document.getElementById('submit-btn').disabled=true;">
+                            <i class="bi bi-x-circle"></i> Xoá chọn
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Hướng dẫn -->
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white fw-semibold border-bottom">
+                <i class="bi bi-info-circle"></i> Hướng dẫn định dạng CSV
+            </div>
+            <div class="card-body">
+                <p class="mb-2 text-muted small">
+                    Nhấn <strong>Tải file mẫu</strong> để tải template với đầy đủ header và 2 hàng ví dụ.
+                    Sau khi điền dữ liệu, lưu lại dưới dạng CSV (UTF-8) và upload lên.
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered small mb-2">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Cột</th>
+                                <th>Bắt buộc</th>
+                                <th>Định dạng / Giá trị</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>patient_name</code></td><td><span class="text-danger">✓</span></td><td>Họ và tên bệnh nhân</td></tr>
+                            <tr><td><code>cccd</code></td><td><span class="text-danger">✓</span></td><td>9–12 chữ số CCCD</td></tr>
+                            <tr><td><code>date_of_birth</code></td><td>Không</td><td>YYYY-MM-DD (vd: 1990-05-20)</td></tr>
+                            <tr><td><code>phone</code></td><td>Không</td><td>10 chữ số, bắt đầu 0 (vd: 0912345678)</td></tr>
+                            <tr><td><code>gender</code></td><td>Không</td><td><code>M</code> (Nam) hoặc <code>F</code> (Nữ), mặc định M</td></tr>
+                            <tr><td><code>facid</code></td><td>Không</td><td>A / B / C / D / E, mặc định A</td></tr>
+                            <tr><td><code>admission_date</code></td><td>Không</td><td>YYYY-MM-DD HH:MM, mặc định thời điểm hiện tại</td></tr>
+                            <tr><td><code>hematocrit</code> đến <code>respiration</code></td><td><span class="text-danger">✓</span></td><td>Số thực (dấu chấm thập phân)</td></tr>
+                            <tr><td><code>secondarydiagnosisnonicd9</code></td><td><span class="text-danger">✓</span></td><td>Số nguyên 0–10</td></tr>
+                            <tr><td>Các cột bệnh lý (<code>asthma</code>, ...)</td><td>Không</td><td><code>0</code> (Không) hoặc <code>1</code> (Có), mặc định 0</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="alert alert-info py-2 small mb-0">
+                    <i class="bi bi-lightbulb"></i>
+                    <strong>Lưu ý:</strong>
+                    <ul class="mb-0 mt-1">
+                        <li><code>rcount</code> được tính tự động từ CCCD (không cần nhập).</li>
+                        <li>Hệ thống sẽ dự đoán LOS và tạo mã EID cho từng bệnh nhân sau khi import.</li>
+                        <li>Bệnh nhân có lỗi validation sẽ bị bỏ qua, các hàng hợp lệ vẫn được import.</li>
+                        <li>Nên lưu file CSV với encoding <strong>UTF-8</strong> để tránh lỗi tiếng Việt.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<!-- Kết quả import -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm text-center">
+            <div class="card-body">
+                <div class="fs-3 fw-bold text-primary">{{ total_rows }}</div>
+                <small class="text-muted">Tổng số hàng</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm text-center">
+            <div class="card-body">
+                <div class="fs-3 fw-bold text-success">{{ success_count }}</div>
+                <small class="text-muted">Import thành công</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm text-center">
+            <div class="card-body">
+                <div class="fs-3 fw-bold text-danger">{{ error_count }}</div>
+                <small class="text-muted">Hàng lỗi</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm text-center">
+            <div class="card-body">
+                <div class="d-grid gap-1">
+                    <a href="{% url 'patients:list' %}" class="btn btn-success btn-sm">
+                        <i class="bi bi-people"></i> Xem danh sách
+                    </a>
+                    <a href="{% url 'patients:import_csv' %}" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-arrow-repeat"></i> Import tiếp
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bảng kết quả từng hàng -->
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white fw-semibold border-bottom d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-list-check"></i> Chi tiết kết quả từng hàng</span>
+        <div class="d-flex gap-2">
+            <span class="badge bg-success">✓ Thành công</span>
+            <span class="badge bg-danger">✗ Lỗi</span>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle small">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center" style="width:60px">Hàng</th>
+                        <th>Họ tên</th>
+                        <th>CCCD</th>
+                        <th class="text-center">Kết quả</th>
+                        <th>Chi tiết</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in row_results %}
+                    <tr class="{% if r.status == 'success' %}result-row-success{% elif r.status == 'error' %}result-row-error{% else %}result-row-pending{% endif %}">
+                        <td class="text-center text-muted">{{ r.row }}</td>
+                        <td class="fw-semibold">{{ r.name }}</td>
+                        <td><code>{{ r.cccd }}</code></td>
+                        <td class="text-center">
+                            {% if r.status == 'success' %}
+                            <span class="badge bg-success"><i class="bi bi-check-lg"></i> Thành công</span>
+                            {% elif r.status == 'error' %}
+                            <span class="badge bg-danger"><i class="bi bi-x-lg"></i> Lỗi</span>
+                            {% else %}
+                            <span class="badge bg-warning text-dark">Bỏ qua</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if r.status == 'success' %}
+                            <span class="text-success">{{ r.message }}</span>
+                            {% if r.eid %}
+                            <a href="{% url 'patients:detail' r.eid %}" class="ms-2 small text-primary">
+                                <i class="bi bi-arrow-right-circle"></i> Xem chi tiết
+                            </a>
+                            {% endif %}
+                            {% else %}
+                            <span class="text-danger">{{ r.message }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('csv-input');
+    const submitBtn = document.getElementById('submit-btn');
+    const fileNameEl = document.getElementById('file-name');
+
+    if (!dropZone) return;
+
+    function handleFile(file) {
+        if (!file) return;
+        if (!file.name.endsWith('.csv')) {
+            alert('Chỉ chấp nhận file .csv');
+            return;
+        }
+        fileNameEl.textContent = '✓ ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+        fileNameEl.classList.remove('d-none');
+        submitBtn.disabled = false;
+    }
+
+    fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
+
+    dropZone.addEventListener('dragover', e => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file) {
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            fileInput.files = dt.files;
+            handleFile(file);
+        }
+    });
+
+    // Hiển thị loading khi submit
+    document.getElementById('import-form').addEventListener('submit', () => {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang import...';
+    });
+})();
+</script>
+{% endblock %}
