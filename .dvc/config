@@ -1,0 +1,7 @@
+[core]
+    remote = minio_remote
+['remote "minio_remote"']
+    url = s3://dvc-storage/snapshots
+    endpointurl = http://localhost:9000
+    access_key_id = minio_admin
+    secret_access_key = minio_password

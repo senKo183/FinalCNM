@@ -1,0 +1,173 @@
+{% extends 'base.html' %}
+{% block title %}FastAPI Inference Service{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1"><i class="bi bi-lightning-charge-fill text-warning"></i> FastAPI Inference Service</h1>
+        <p class="text-muted mb-0">Giai đoạn 5 — Model serving độc lập, tách biệt khỏi Django</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ fastapi_url }}/api/v2/docs" target="_blank" class="btn btn-primary btn-sm">
+            <i class="bi bi-box-arrow-up-right"></i> Swagger UI
+        </a>
+        <a href="{{ nginx_url }}" target="_blank" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-globe"></i> Nginx (port 80)
+        </a>
+    </div>
+</div>
+
+{% if error_msg %}
+<div class="alert alert-warning">
+    <h5><i class="bi bi-exclamation-triangle"></i> FastAPI Service chưa sẵn sàng</h5>
+    <p class="mb-1">Không kết nối được tới <code>{{ fastapi_url }}</code>: <em>{{ error_msg }}</em></p>
+    <hr>
+    <p class="mb-1"><strong>Cách khởi động:</strong></p>
+    <ol class="mb-0 small">
+        <li>Đảm bảo Docker Desktop đang chạy.</li>
+        <li>Chạy: <code>docker compose up -d fastapi nginx</code></li>
+        <li>Đợi ~30 giây để FastAPI build image và khởi động.</li>
+        <li>Kiểm tra: <a href="{{ fastapi_url }}/api/v2/health" target="_blank">{{ fastapi_url }}/api/v2/health</a></li>
+    </ol>
+</div>
+{% else %}
+
+<!-- Status cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-{% if health_data.status == 'ok' %}success{% else %}warning{% endif %}">
+            <div class="card-body text-center">
+                <div class="fs-3">{% if health_data.status == 'ok' %}✅{% else %}⚠️{% endif %}</div>
+                <div class="fw-bold">Service Status</div>
+                <small class="badge bg-{% if health_data.status == 'ok' %}success{% else %}warning{% endif %}">{{ health_data.status|upper }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-info">
+            <div class="card-body text-center">
+                <div class="fs-2"><i class="bi bi-cpu text-info"></i></div>
+                <div class="fw-bold">Model Version</div>
+                <small class="text-muted">{{ health_data.model_version }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-secondary">
+            <div class="card-body text-center">
+                <div class="fs-2"><i class="bi bi-hdd text-secondary"></i></div>
+                <div class="fw-bold">Model Source</div>
+                <small class="text-muted">{{ health_data.model_source }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-primary">
+            <div class="card-body text-center">
+                <div class="fs-2"><i class="bi bi-clock text-primary"></i></div>
+                <div class="fw-bold">Timestamp</div>
+                <small class="text-muted" style="font-size:0.7rem">{{ health_data.timestamp }}</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Model Info -->
+{% if model_info %}
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-light"><strong><i class="bi bi-info-circle"></i> Model Info</strong></div>
+    <div class="card-body">
+        <table class="table table-sm mb-0">
+            <tr><th style="width:220px">Model Version</th><td>{{ model_info.model_version }}</td></tr>
+            <tr><th>Model Source</th><td>{{ model_info.model_source }}</td></tr>
+            <tr><th>Loaded At</th><td>{{ model_info.loaded_at|default:"—" }}</td></tr>
+            <tr><th>MLflow Tracking URI</th><td><code>{{ model_info.mlflow_tracking_uri }}</code></td></tr>
+            <tr><th>Registered Model</th><td><code>{{ model_info.registered_model_name }}</code></td></tr>
+            <tr><th>Feature Count</th><td>{{ model_info.feature_count }}</td></tr>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Actions -->
+<div class="card mb-4">
+    <div class="card-header bg-light"><strong><i class="bi bi-lightning"></i> Actions</strong></div>
+    <div class="card-body d-flex gap-2 flex-wrap">
+        <form method="post">{% csrf_token %}
+            <input type="hidden" name="action" value="reload_model">
+            <button type="submit" class="btn btn-outline-warning btn-sm">
+                <i class="bi bi-arrow-repeat"></i> Reload @champion Model
+            </button>
+        </form>
+        <a href="{{ fastapi_url }}/api/v2/docs" target="_blank" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-file-code"></i> Swagger API Docs
+        </a>
+        <a href="{{ fastapi_url }}/api/v2/redoc" target="_blank" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-book"></i> ReDoc
+        </a>
+    </div>
+</div>
+
+{% endif %}
+
+<!-- Kiến trúc -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-light"><strong><i class="bi bi-diagram-2"></i> Kiến trúc Giai đoạn 5</strong></div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                    <tr><th>Service</th><th>URL</th><th>Vai trò</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Nginx</strong></td>
+                        <td><a href="{{ nginx_url }}" target="_blank"><code>{{ nginx_url }}</code> (port 80)</a></td>
+                        <td>Reverse proxy → Django + FastAPI + MLflow</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Django</strong></td>
+                        <td><code>localhost:8000</code> (local)</td>
+                        <td>Web UI + Business logic + Admin</td>
+                    </tr>
+                    <tr>
+                        <td><strong>FastAPI</strong></td>
+                        <td><a href="{{ fastapi_url }}" target="_blank"><code>{{ fastapi_url }}</code> (port 8001)</a></td>
+                        <td>Model serving — REST API inference</td>
+                    </tr>
+                    <tr>
+                        <td><strong>MLflow</strong></td>
+                        <td><a href="http://localhost:5000" target="_blank"><code>localhost:5000</code></a></td>
+                        <td>Experiment tracking + Model registry</td>
+                    </tr>
+                    <tr>
+                        <td><strong>MinIO</strong></td>
+                        <td><a href="http://localhost:9001" target="_blank"><code>localhost:9001</code></a></td>
+                        <td>Artifact storage (model files, SHAP charts)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- CI/CD -->
+<div class="alert alert-info">
+    <h6><i class="bi bi-github"></i> GitHub Actions CI/CD Pipeline</h6>
+    <p class="mb-1 small">File: <code>.github/workflows/los_pipeline.yml</code></p>
+    <ul class="mb-0 small">
+        <li><strong>Trigger:</strong> Push lên nhánh <code>main</code> hoặc lịch cron hàng tuần</li>
+        <li><strong>Job 1:</strong> Run tests + import check</li>
+        <li><strong>Job 2:</strong> Feast materialize (đồng bộ Online Store)</li>
+        <li><strong>Job 3:</strong> Trigger retrain (scheduled/manual)</li>
+        <li><strong>Job 4:</strong> Register model mới vào MLflow Registry với alias <code>@staging</code></li>
+        <li><strong>Job 5:</strong> Promote <code>@staging → @champion</code> nếu MAE cải thiện</li>
+        <li><strong>Job 6:</strong> Reload FastAPI với @champion mới — zero downtime</li>
+    </ul>
+    {% if github_repo != '#' %}
+    <a href="{{ github_repo }}/actions" target="_blank" class="btn btn-sm btn-outline-dark mt-2">
+        <i class="bi bi-github"></i> Xem Workflow Runs
+    </a>
+    {% endif %}
+</div>
+{% endblock %}

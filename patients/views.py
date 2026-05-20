@@ -13,6 +13,17 @@ from PredictLOSWeb.mongodb import get_collection
 from ml_engine.predictor import predict_los
 
 
+def _push_to_feast(patient_doc: dict) -> None:
+    """Push features lên Feast Online Store sau khi tạo/cập nhật bệnh nhân.
+    Fail gracefully — không raise exception nếu Feast chưa sẵn sàng.
+    """
+    try:
+        from ml_engine.feast_manager import push_patient_features  # noqa: WPS433
+        push_patient_features(patient_doc)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 COMORBIDITY_FIELDS = [
     ('dialysisrenalendstage', 'Suy thận giai đoạn cuối'),
     ('asthma', 'Hen suyễn'),
@@ -196,7 +207,7 @@ def patient_create(request):
         for field_name, _ in COMORBIDITY_FIELDS:
             features[field_name] = 1 if request.POST.get(field_name) else 0
 
-        prediction_result = predict_los(features)
+        prediction_result = predict_los(features, cccd=cccd)
         predicted_los = prediction_result['predicted_los']
         predicted_discharge_date = admission_date + timedelta(days=round(predicted_los))
 
@@ -225,6 +236,10 @@ def patient_create(request):
         }
 
         result = collection.insert_one(patient)
+
+        # Giai đoạn 4: Push features lên Feast Online Store (Redis)
+        _push_to_feast({**features, 'cccd': cccd, 'rcount': features['rcount']})
+
         messages.success(
             request,
             f'Tạo hồ sơ thành công — Mã EID: {patient["patient_id"]}. '
@@ -371,6 +386,12 @@ def patient_discharge(request, patient_id):
             'created_at': datetime.now(),
         })
 
+        # Giai đoạn 4: Cập nhật Feast Online Store — rcount tăng sau xuất viện
+        new_rcount = _count_rcount(patient.get('cccd', ''))
+        updated_features = dict(patient.get('features', {}))
+        updated_features['rcount'] = new_rcount
+        _push_to_feast({**updated_features, 'cccd': patient.get('cccd', '')})
+
         messages.success(
             request,
             f'Xuất viện thành công. LOS thực tế: {actual_los:.1f} ngày. '
@@ -463,7 +484,7 @@ def patient_edit(request, patient_id):
         }
 
         if features_changed:
-            prediction_result = predict_los(new_features)
+            prediction_result = predict_los(new_features, cccd=patient.get('cccd'))
             predicted_los = prediction_result['predicted_los']
             admission_date = patient['admission_date']
             predicted_discharge_date = admission_date + timedelta(days=round(predicted_los))
@@ -476,6 +497,9 @@ def patient_edit(request, patient_id):
             {'_id': ObjectId(patient_id)},
             {'$set': update_fields}
         )
+
+        # Giai đoạn 4: Push features mới lên Feast Online Store (Redis)
+        _push_to_feast({**new_features, 'cccd': patient.get('cccd', '')})
 
         if features_changed:
             messages.success(

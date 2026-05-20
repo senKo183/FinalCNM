@@ -341,29 +341,35 @@ Feast Registry (`registry.db`) lưu metadata về Feature Views, Entities, và D
 
 ## 8. Lộ trình triển khai
 
-### Giai đoạn 1 — Foundation (Tuần 1-2)
+### Giai đoạn 1 — Foundation ✅ HOÀN THÀNH (23/04/2026)
 
 Mục tiêu: Có MLflow hoạt động và mọi retrain được log đầy đủ.
 
-Công việc: Cài đặt Docker Compose với MLflow Server + MinIO + PostgreSQL. Sửa Celery retrain task thêm khoảng 20 dòng MLflow logging. Migrate model từ local `.pkl` sang MLflow Registry. Thiết lập alias @champion cho model hiện tại.
+**Đã triển khai:** Docker Compose với MLflow Server + MinIO + PostgreSQL + Redis. SGDRegressor thay GradientBoosting với `partial_fit`. MLflow Registry với alias `@champion`. Admin dashboard `/ml/mlflow/`.
 
 Kết quả kiểm chứng: Mọi lần retrain xuất hiện trong MLflow UI với đầy đủ metrics và model artifact.
 
-### Giai đoạn 2 — Monitoring (Tuần 3-5)
+### Giai đoạn 2 — Monitoring ✅ HOÀN THÀNH (23/04/2026)
 
 Mục tiêu: Có drift monitoring tự động và SHAP explanation.
 
-Công việc: Tạo `reference_data.csv` từ dataset gốc. Thêm Evidently vào Celery Beat task hàng tuần. Tích hợp drift score vào điều kiện trigger retrain. Thêm SHAP vào Evaluation step trong Celery task. Log SHAP artifacts vào MLflow. Thêm API endpoint `/monitor/drift` trong FastAPI.
+**Đã triển khai:** Evidently AI drift monitoring (`ml_engine/drift_monitor.py`), SHAP explainability (`ml_engine/shap_explainer.py`), Celery Beat task hàng tuần, API endpoint `/ml/drift/api/`, admin dashboard `/ml/drift/` và `/ml/explanation/`.
 
-Kết quả kiểm chứng: Sau 1 tuần chạy, Evidently tạo được report đầu tiên. SHAP chart xuất hiện trong MLflow artifacts.
+Kết quả kiểm chứng: Evidently tạo drift report. SHAP chart log vào MLflow artifacts. Trang chi tiết bệnh nhân hiển thị top 5 SHAP features.
 
-### Giai đoạn 3 — Data Versioning (Tuần 6-8)
+### Giai đoạn 3 — Data Versioning ✅ HOÀN THÀNH (28/04/2026)
 
 Mục tiêu: Mọi dataset có version, reproducible.
 
-Công việc: Khởi tạo DVC trong repo. Thêm MinIO làm DVC remote. Track các file dataset quan trọng. Sửa Celery retrain task để tạo DVC snapshot trước mỗi lần train và liên kết snapshot ID với MLflow Run.
+**Đã triển khai:**
+- `ml_engine/dvc_manager.py`: Module DVC helper — `take_stream_buffer_snapshot()`, `track_dataset_file()`, `configure_minio_remote()`, `get_dvc_status()`.
+- `ml_engine/trainer.py`: Tích hợp DVC snapshot trước mỗi lần train — export stream_buffer → Parquet, `dvc add`, `dvc push`, liên kết snapshot ID với MLflow Run tags và `model_versions` document.
+- `ml_engine/tasks.py`: Task `run_dataset_dvc_track` để track file dataset khi cập nhật.
+- Admin UI `/ml/dvc/`: Dashboard DVC — trạng thái, snapshots, model versions liên kết DVC.
+- `requirements.txt`: `dvc[s3]>=3.0`, `PyYAML>=6.0`, `pyarrow>=14.0`.
+- `SETUP_V4.md`: Hướng dẫn khởi tạo DVC + MinIO remote + track datasets.
 
-Kết quả kiểm chứng: Có thể checkout Git commit bất kỳ và `dvc pull` về đúng dataset tại thời điểm đó.
+Kết quả kiểm chứng: Mỗi lần retrain tự động tạo DVC snapshot, log vào MLflow. Có thể checkout Git commit bất kỳ và `dvc pull` về đúng dataset tại thời điểm đó.
 
 ### Giai đoạn 4 — Feature Store (Tuần 9-11)
 

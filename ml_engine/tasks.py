@@ -1,8 +1,8 @@
-"""Celery tasks — v2 Giai đoạn 2 Monitoring & Explainability.
+"""Celery tasks — v2 Giai đoạn 4 Feast Feature Store.
 
-Thêm mới:
-- run_drift_monitoring: chạy Evidently weekly, lưu kết quả vào drift_reports,
-  tự trigger retrain nếu drift_score > HIGH threshold.
+Thêm mới so với Giai đoạn 2:
+- trigger_retrain: log thêm dvc_snapshot_id vào kết quả trả về.
+- run_dataset_dvc_track: task track file dataset gốc với DVC (thủ công).
 """
 from datetime import datetime, timedelta
 from celery import shared_task
@@ -123,10 +123,70 @@ def trigger_retrain(reason='Thủ công'):
     if result.get('shap_feature_importance'):
         top1 = result['shap_feature_importance'][0]
         shap_info = f', top feature: {top1["feature"]} ({top1["importance"]:.4f})'
+    dvc_info = ''
+    if result.get('dvc_snapshot_id'):
+        dvc_info = f', DVC snapshot: {result["dvc_snapshot_id"]}'
     return (
         f'Retrain hoàn tất ({reason}). '
         f'Version: {result["version"]}, MAE: {result["mae"]:.4f}, '
-        f'{improved} version trước{shap_info}.'
+        f'{improved} version trước{shap_info}{dvc_info}.'
+    )
+
+
+@shared_task
+def run_dataset_dvc_track():
+    """Track file dataset gốc (LengthOfStay.csv, reference_data.csv) với DVC.
+
+    Task thủ công — chạy sau khi cập nhật file dataset.
+    Nên chạy qua: celery call ml_engine.tasks.run_dataset_dvc_track
+    """
+    from .dvc_manager import is_dvc_initialized, track_dataset_file
+    if not is_dvc_initialized():
+        return 'DVC chưa init. Bỏ qua.'
+
+    results = []
+    for path in [
+        str(settings.CSV_DATA_PATH),
+        str(settings.REFERENCE_DATA_PATH),
+    ]:
+        res = track_dataset_file(path)
+        if res:
+            results.append(f'{path} → md5={res["dvc_md5"][:16]}, pushed={res["pushed"]}')
+        else:
+            results.append(f'{path} → lỗi hoặc bỏ qua')
+
+    return 'Dataset DVC track: ' + ' | '.join(results)
+
+
+@shared_task
+def feast_materialize_admitted():
+    """Push features của tất cả bệnh nhân đang điều trị lên Feast Online Store.
+
+    Task đồng bộ hóa hàng loạt — chạy thủ công hoặc theo lịch khi
+    Redis khởi động lại (data bị mất) hoặc sau khi feast apply.
+    Trả về số lượng đã push thành công.
+    """
+    from .feast_manager import push_patient_features, is_feast_available
+
+    if not is_feast_available():
+        return 'Feast chưa sẵn sàng (chưa install hoặc chưa feast apply). Bỏ qua.'
+
+    patients_col = get_collection('patients')
+    admitted = list(patients_col.find({'status': 'admitted'}))
+
+    pushed = 0
+    failed = 0
+    for patient in admitted:
+        features = dict(patient.get('features', {}))
+        features['cccd'] = patient.get('cccd', '')
+        if push_patient_features(features):
+            pushed += 1
+        else:
+            failed += 1
+
+    return (
+        f'Feast materialize hoàn tất: đã push {pushed}/{len(admitted)} bệnh nhân '
+        f'đang điều trị. Thất bại: {failed}.'
     )
 
 

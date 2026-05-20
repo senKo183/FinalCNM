@@ -112,6 +112,161 @@
   - Evidently 0.6.7 đã được cài (cùng với shap 0.51.0)
   - Các Giai đoạn 3-5 (DVC, Feast, FastAPI, CI/CD) chưa triển khai
 
+### [20/05/2026] – Testing toàn hệ thống + Sửa lỗi + Push GitHub
+- **Đã làm:**
+  - **Khởi chạy toàn bộ stack:**
+    - Docker compose up: PostgreSQL, MinIO, MLflow, Redis (healthy)
+    - Cài dependencies thiếu: `dvc[s3]>=3.0`, `PyYAML`, `pyarrow`, `feast[redis]>=0.40`, `fastapi`, `uvicorn`
+    - Chạy Django server (port 8000), FastAPI (port 8001), Celery worker
+  - **Khởi tạo DVC:**
+    - `dvc init` trong repo
+    - Cấu hình MinIO remote qua CLI: `dvc remote add -d minio_remote s3://dvc-storage/snapshots`
+    - `dvc add LengthOfStay.csv reference_data.csv` (bỏ tracking khỏi Git trước)
+    - `dvc push` → 2 files pushed lên MinIO thành công
+  - **Khởi tạo Feast:**
+    - Tạo seed parquet files cho offline store: `data/feast_offline/demographics/`, `lab_results/`, `comorbidities/`
+    - **Fix bug**: `features.py` dùng glob pattern `*_*.parquet` không hoạt động trên Windows (PyArrow không hỗ trợ wildcard path). Sửa thành directory paths: `../data/feast_offline/demographics`
+    - `feast apply` thành công: 3 Feature Views đăng ký (patient_demographics, patient_lab_results, patient_comorbidities)
+    - **Fix bug**: `feast_manager.py` `feast_apply()` sửa dùng đường dẫn tuyệt đối đến feast executable (Windows venv)
+  - **Sửa lỗi FastAPI startup crash:**
+    - Lỗi: `best_los_model.pkl` cũ không tương thích với numpy mới (`MT19937 BitGenerator not found`)
+    - Fix `_try_load_default_pkl()`: thử load các pkl mới nhất (`model_v*.pkl`) trước, bỏ qua file lỗi
+    - Fix `startup_event()`: wrap `load_model()` trong try/except để tránh crash khi model load thất bại
+    - FastAPI khởi động thành công với `model_v2_20260422_200051.pkl`
+  - **Testing kết quả:**
+    - ✅ Tất cả trang Django load HTTP 200 (login, dashboard, patients, ml/versions, ml/mlflow, ml/drift, ml/explanation, ml/dvc, ml/feast, ml/fastapi, ml/settings)
+    - ✅ MLflow tracking: 1 run sau retrain (MAE=0.8912, RMSE=1.1663, R²=0.7521)
+    - ✅ DVC: initialized, 1 snapshot, MinIO remote configured
+    - ✅ Feast: 3 Feature Views, Redis DB 1 online
+    - ✅ FastAPI: service healthy, Swagger UI tại `/api/v2/docs`, health endpoint trả status OK
+    - ✅ Celery worker: connected Redis, 6 tasks registered
+    - ⚠️ Nginx+FastAPI Docker: Docker Hub auth issue với nginx:1.27-alpine image — FastAPI chạy local thay thế
+- **File thay đổi:** fastapi_service/main.py (fix startup), feature_store/features.py (fix paths), ml_engine/feast_manager.py (fix feast apply path), PROGRESS.md, .dvc/config (mới), .dvcignore (mới), LengthOfStay.csv.dvc (mới), reference_data.csv.dvc (mới), data/feast_offline/ (mới), data/dvc_snapshots/ (mới)
+- **Lưu ý:**
+  - Docker Hub auth issue trên mạng nội bộ: `nginx:1.27-alpine` không pull được → FastAPI chạy bằng `uvicorn` local thay Docker
+  - Feast glob pattern không hoạt động trên Windows với PyArrow → phải dùng directory paths
+  - `best_los_model.pkl` (v1 GradientBoosting) không tương thích numpy mới → FastAPI tự skip và dùng pkl mới nhất
+  - SHAP explanation cần trigger retrain trước; Drift report cần ≥10 mẫu trong stream buffer
+
+### [28/04/2026] – v2 Giai đoạn 3: DVC Data Versioning
+- **Đã làm:**
+  - **DVC Module (`ml_engine/dvc_manager.py`, mới):**
+    - `take_stream_buffer_snapshot(buffer_docs, version_label)`: export stream_buffer → Parquet, chạy `dvc add` + `dvc push` lên MinIO, trả về `snapshot_id` (gồm DVC md5 hash)
+    - `track_dataset_file(filepath)`: track file CSV gốc (LengthOfStay.csv, reference_data.csv) với DVC
+    - `configure_minio_remote()`: cấu hình MinIO làm DVC remote mặc định từ Django settings
+    - `get_dvc_status()`: trả về trạng thái DVC hiện tại (initialized, remote, snapshots list)
+    - `is_dvc_initialized()`: kiểm tra DVC đã init chưa
+    - Fail graceful hoàn toàn — nếu DVC chưa init hoặc lỗi, trainer vẫn retrain bình thường
+  - **Trainer (`ml_engine/trainer.py`, cập nhật Giai đoạn 3):**
+    - Trước mỗi lần train (khi có buffer data): tự động gọi `take_stream_buffer_snapshot()`
+    - `dvc_snapshot_id`, `dvc_snapshot_file`, `dvc_md5` được lưu vào `model_versions` document
+    - `stream_buffer` docs được update thêm trường `dvc_snapshot_id` sau khi retrain
+    - `_log_to_mlflow()` nhận thêm `dvc_snapshot`: log 4 tags vào MLflow Run (`dvc_snapshot_id`, `dvc_md5`, `dvc_num_records`, `dvc_pushed`)
+    - `_prepare_training_data()` trả thêm `buffer_docs` raw để DVC snapshot
+  - **Celery Tasks (`ml_engine/tasks.py`, cập nhật):**
+    - `trigger_retrain`: log thêm `dvc_snapshot_id` vào return message
+    - `run_dataset_dvc_track` (task mới): track LengthOfStay.csv + reference_data.csv với DVC khi dataset cập nhật
+  - **Admin UI:**
+    - View `dvc_status_view` (admin-only): hiển thị trạng thái DVC, danh sách snapshots gần nhất, model versions liên kết DVC, hướng dẫn tái tạo dataset
+    - Route: `/ml/dvc/`
+    - Template `templates/ml_engine/dvc_status.html` (mới): dashboard đầy đủ với action buttons (Configure Remote, Track Datasets)
+    - Navbar thêm link **"DVC Data"** cho admin
+  - **Config:**
+    - `requirements.txt` thêm `dvc[s3]>=3.0`, `PyYAML>=6.0`, `pyarrow>=14.0`
+    - `.env` thêm `DVC_REMOTE_NAME`, `DVC_REMOTE_URL`, `DVC_SNAPSHOTS_DIR`
+    - `settings.py` thêm `DVC_REMOTE_NAME`, `DVC_REMOTE_URL`, `DVC_SNAPSHOTS_DIR`
+  - `SETUP_V4.md` (mới): hướng dẫn khởi tạo DVC, cấu hình MinIO remote, track datasets, tái tạo dataset, troubleshooting
+- **File thay đổi:** ml_engine/dvc_manager.py (mới), ml_engine/trainer.py, ml_engine/tasks.py, ml_engine/views.py, ml_engine/urls.py, templates/ml_engine/dvc_status.html (mới), templates/base.html, PredictLOSWeb/settings.py, .env, requirements.txt, SETUP_V4.md (mới)
+- **Lưu ý:**
+  - DVC cần được `dvc init` thủ công một lần trước khi snapshot hoạt động (xem SETUP_V4.md mục 4)
+  - Toàn bộ DVC integration dùng pattern fail-graceful: nếu DVC chưa init hoặc MinIO chưa chạy, trainer vẫn hoạt động bình thường không lỗi
+  - Snapshot file được lưu tại `data/dvc_snapshots/stream_buffer_<version>_<timestamp>.parquet`
+  - Mỗi snapshot liên kết 2 chiều: MLflow Run ↔ DVC snapshot (qua tags và model_versions document)
+  - Giai đoạn 4 (Feast Feature Store) và Giai đoạn 5 (FastAPI + CI/CD) chưa triển khai
+
+### [20/05/2026] – v2 Giai đoạn 5: FastAPI + Nginx + GitHub Actions CI/CD
+- **Đã làm:**
+  - **FastAPI Inference Service (`fastapi_service/`, mới):**
+    - `main.py`: FastAPI app với endpoints `/api/v2/predict`, `/api/v2/health`, `/api/v2/model/info`, `/api/v2/model/reload`. Swagger UI tại `/api/v2/docs`
+    - Load model theo thứ tự ưu tiên: MLflow Registry @champion → MongoDB active version → bootstrap pkl local; fail-graceful hoàn toàn
+    - Input validation đầy đủ qua Pydantic (`PredictRequest`): kiểm tra range, type
+    - CORS middleware cho phép call từ bất kỳ origin
+    - `Dockerfile`: Python 3.11-slim, health check mỗi 15s, uvicorn 2 workers
+    - `requirements.txt` riêng cho container (fastapi, uvicorn, mlflow, redis, pymongo, scikit-learn...)
+  - **Nginx Reverse Proxy (`nginx/nginx.conf`, mới):**
+    - Port 80 làm entry point duy nhất cho toàn hệ thống
+    - Route `/api/v2/` → FastAPI (port 8001, Docker container)
+    - Route `/mlflow/` → MLflow UI (port 5000, Docker container)
+    - Route `/` → Django (host.docker.internal:8000, chạy local)
+    - Health check endpoint `/nginx-health`
+  - **Docker Compose (cập nhật):**
+    - Service `fastapi`: build từ `fastapi_service/Dockerfile`, mount volume `ml_models/` + `LengthOfStay.csv` (read-only), env_file từ `.env`, override URLs sang Docker internal hostnames
+    - Service `nginx`: image nginx:1.27-alpine, `extra_hosts: host.docker.internal:host-gateway` để truy cập Django trên host Windows
+  - **GitHub Actions CI/CD (`.github/workflows/los_pipeline.yml`, mới):**
+    - 6 jobs tuần tự: test → feast_materialize → retrain → register_staging → promote_champion → reload_fastapi
+    - Trigger: push lên main, cron hàng tuần, workflow_dispatch (manual với input force_retrain + promote flags)
+    - Job reload_fastapi: gọi `POST /api/v2/model/reload` để FastAPI load @champion mới — zero downtime
+  - **Django Admin UI:**
+    - `fastapi_status_view` (admin-only): ping FastAPI health/model/info, nút "Reload @champion Model", bảng kiến trúc toàn hệ thống, link GitHub Actions
+    - Route `/ml/fastapi/`
+    - Template `templates/ml_engine/fastapi_status.html` (mới): status cards, model info table, actions, architecture overview, CI/CD info
+    - Navbar admin thêm link **"FastAPI"**
+  - **Config:**
+    - `.env` thêm `FASTAPI_URL`, `NGINX_URL`, `GITHUB_REPO_URL`
+    - `settings.py` thêm 3 biến tương ứng
+  - `SETUP_V6.md` (mới): hướng dẫn đầy đủ `docker compose up -d`, test endpoints, GitHub Actions secrets setup, troubleshooting
+- **File thay đổi:** fastapi_service/main.py (mới), fastapi_service/Dockerfile (mới), fastapi_service/requirements.txt (mới), nginx/nginx.conf (mới), docker-compose.yml, .github/workflows/los_pipeline.yml (mới), ml_engine/views.py, ml_engine/urls.py, templates/ml_engine/fastapi_status.html (mới), templates/base.html, PredictLOSWeb/settings.py, .env, SETUP_V6.md (mới)
+- **Lưu ý:**
+  - Django vẫn chạy local (`python manage.py runserver 8000`) — Nginx proxy về host qua `host.docker.internal` (Docker Desktop for Windows hỗ trợ sẵn)
+  - FastAPI load model từ MLflow Registry @champion; nếu MLflow chưa có @champion (chưa retrain lần nào), fallback về local pkl — không bị lỗi
+  - Port 80 Nginx có thể conflict với IIS/Apache trên Windows → đổi port trong docker-compose nếu cần (ví dụ: "8080:80")
+  - GitHub Actions cần self-hosted runner để chạy các job Python; workflow YAML đã sẵn sàng, chỉ cần setup runner + secrets
+  - Toàn bộ 5 giai đoạn MLOps đã hoàn thành: Foundation → Monitoring → DVC → Feast → CI/CD
+
+### [20/05/2026] – v2 Giai đoạn 4: Feast Feature Store (Redis Online Store)
+- **Đã làm:**
+  - **Feature Store Repo (`feature_store/`, mới):**
+    - `feature_store.yaml`: config Feast provider=local, online store=Redis DB 1 (tránh conflict với Celery DB 0), offline store=file (parquet)
+    - `features.py`: Entity `patient_cccd` (CCCD làm khóa định danh), 3 FeatureViews (`patient_demographics` — rcount/bmi/pulse/respiration/secondarydiagnosis; `patient_lab_results` — hematocrit/neutrophils/sodium/glucose/bloodureanitro/creatinine; `patient_comorbidities` — 11 bệnh lý), 3 PushSources tương ứng cho real-time update từ Django
+  - **Feast Manager (`ml_engine/feast_manager.py`, mới):**
+    - `push_patient_features(patient_doc)`: push 3 FeatureViews lên Redis Online Store khi bệnh nhân nhập viện/cập nhật
+    - `get_online_features(cccd)`: lấy features từ Redis cho inference (low-latency thay MongoDB)
+    - `feast_apply()`: chạy `feast apply` CLI programmatically từ Django admin
+    - `materialize_from_parquet(path)`: materialize từ parquet snapshot vào Online Store
+    - `get_feast_status()`: trả về dict trạng thái đầy đủ cho admin dashboard
+    - `is_feast_available()`: kiểm tra cài đặt + registry, fail-graceful
+  - **Predictor (`ml_engine/predictor.py`, cập nhật Giai đoạn 4):**
+    - Thêm `_enrich_with_feast(cccd, raw_features)`: thử merge features từ Redis vào raw_features trước khi predict
+    - `predict_los()` nhận thêm tham số `cccd=None`: ưu tiên Feast Online Store (Redis), fallback về raw_features nếu lỗi
+    - Response có thêm `feast_used: True/False` để debug
+  - **Patients Views (`patients/views.py`, cập nhật):**
+    - Thêm helper `_push_to_feast(patient_doc)`: gọi Feast push, fail-graceful
+    - `patient_create`: sau insert → tự động push features lên Feast; `predict_los` nhận `cccd`
+    - `patient_discharge`: sau discharge → tính rcount mới, push updated features (rcount tăng) lên Feast
+    - `patient_edit`: sau update → push features mới lên Feast; `predict_los` nhận `cccd`
+  - **Celery Tasks (`ml_engine/tasks.py`, cập nhật):**
+    - `feast_materialize_admitted` (task mới): push features của toàn bộ bệnh nhân đang điều trị (admitted) lên Feast — dùng khi Redis restart
+    - Celery Beat schedule thêm `daily-feast-materialize` (05:00 hàng ngày)
+  - **Admin UI:**
+    - `feast_status_view` (admin-only): hiển thị trạng thái cài đặt, Feature Views, Redis online store info, actions (feast apply + materialize)
+    - Route `/ml/feast/`
+    - Template `templates/ml_engine/feast_status.html` (mới): dashboard đầy đủ với status cards, Feature Views table, action buttons, luồng dữ liệu
+    - Navbar thêm link **"Feast"** cho admin
+  - **Config:**
+    - `requirements.txt` thêm `feast[redis]>=0.40,<0.43`
+    - `.env` thêm `FEAST_REDIS_URL`, `FEAST_STORE_DIR`, `FEAST_REGISTRY_PATH`
+    - `settings.py` thêm 3 biến Feast config tương ứng
+    - `PredictLOSWeb/celery.py` thêm `daily-feast-materialize` beat schedule
+  - `SETUP_V5.md` (mới): hướng dẫn cài đặt, feast apply, kiểm chứng, troubleshooting
+- **File thay đổi:** feature_store/feature_store.yaml (mới), feature_store/features.py (mới), ml_engine/feast_manager.py (mới), ml_engine/predictor.py, ml_engine/views.py, ml_engine/urls.py, ml_engine/tasks.py, PredictLOSWeb/celery.py, patients/views.py, templates/ml_engine/feast_status.html (mới), templates/base.html, PredictLOSWeb/settings.py, .env, requirements.txt, SETUP_V5.md (mới)
+- **Lưu ý:**
+  - Toàn bộ Feast integration dùng pattern fail-graceful: nếu Feast chưa apply hoặc Redis chưa chạy, predictor vẫn dùng raw_features như cũ — hệ thống không vỡ
+  - `feast apply` cần chạy một lần từ thư mục `feature_store/` hoặc qua admin dashboard `/ml/feast/`
+  - Feast dùng Redis DB 1 (Celery dùng DB 0) → không conflict
+  - Bệnh nhân tạo trước khi có Feast chưa có features trong Redis → dùng "Materialize hàng loạt" trong admin để đồng bộ
+  - Feature Store thực sự có ích nhất khi có nhiều bệnh nhân và inference latency quan trọng — với production load thấp, lợi ích chính là training-serving consistency (cùng feature definition)
+  - Giai đoạn 5 (FastAPI serving + Nginx + GitHub Actions CI/CD) chưa triển khai
+
 ### [02/03/2026] – v2 Giai đoạn 1 Foundation: MLflow + MinIO + PostgreSQL + SGDRegressor
 - **Đã làm:**
   - Hạ tầng MLOps cơ bản (readme_los_v2.md — Giai đoạn 1 / Tuần 1-2):

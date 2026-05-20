@@ -1,0 +1,11 @@
+project: los_prediction
+registry: ../data/feast_registry/registry.db
+provider: local
+online_store:
+  type: redis
+  # Dùng DB 1 để tránh conflict với Celery (DB 0)
+  # Giá trị này sẽ được feast_manager.py generate động từ .env
+  connection_string: "redis://:redis_password@localhost:6379/1"
+offline_store:
+  type: file
+entity_key_serialization_version: 2

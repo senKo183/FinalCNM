@@ -71,6 +71,24 @@
                             <i class="bi bi-lightbulb"></i> SHAP Explain
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'dvc_status' %}active{% endif %}"
+                           href="{% url 'ml_engine:dvc_status' %}">
+                            <i class="bi bi-database-check"></i> DVC Data
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'feast_status' %}active{% endif %}"
+                           href="{% url 'ml_engine:feast_status' %}">
+                            <i class="bi bi-database-gear"></i> Feast
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'fastapi_status' %}active{% endif %}"
+                           href="{% url 'ml_engine:fastapi_status' %}">
+                            <i class="bi bi-lightning-charge-fill"></i> FastAPI
+                        </a>
+                    </li>
                     {% endif %}
                 </ul>
                 <ul class="navbar-nav">

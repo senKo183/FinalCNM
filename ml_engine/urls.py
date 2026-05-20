@@ -13,4 +13,10 @@ urlpatterns = [
     path('drift/', views.drift_report_view, name='drift_report'),
     path('drift/api/', views.drift_api_view, name='drift_api'),
     path('explanation/', views.model_explanation_view, name='model_explanation'),
+    # Giai đoạn 3: DVC Data Versioning
+    path('dvc/', views.dvc_status_view, name='dvc_status'),
+    # Giai đoạn 4: Feast Feature Store
+    path('feast/', views.feast_status_view, name='feast_status'),
+    # Giai đoạn 5: FastAPI Inference Service
+    path('fastapi/', views.fastapi_status_view, name='fastapi_status'),
 ]

@@ -1,0 +1,52 @@
+
+£
+„
+patient_cccdVSá»‘ CCCD bá»‡nh nhÃ¢n â€” khÃ³a Ä‘á»‹nh danh xuyÃªn suá»‘t má»i Ä‘á»£t Ä‘iá»u trá»‹"patient_cccdJlos_prediction
+õğ¶Ğø°Âyõğ¶Ğø°Ây
+C
+%
+__dummy"
+__dummy_idJlos_prediction
+õğ¶Ğø°Âyõğ¶Ğø°Ây1"$d655c174-dcd3-4925-a894-cb7560374c49*õğ¶Ğ°—ùz2é
+Ê
+patient_comorbiditieslos_predictionpatient_cccd"
+hemo"
+dialysisrenalendstage"
+
+asthma"
+irondef"	
+pneum"
+substancedependence"
+psychologicaldisordermajor"
+depress"
+
+psychother"
+fibrosisandother"
+malnutrition2€ç„:”event_timestampZ%#../data/feast_offline/comorbiditiesŠ1feast.infra.offline_stores.file_source.FileSource¢#../data/feast_offline/comorbidities@J™	Šfeast.data_source.PushSource¢push_comorbiditiesÒ`event_timestampZ%#../data/feast_offline/comorbidities¢#../data/feast_offline/comorbiditiesb
+patient_cccd
+õğ¶Ğø°Âyõğ¶Ğø°Ây2ô
+Õ
+patient_lab_resultslos_predictionpatient_cccd"
+
+hematocrit"
+neutrophils"
+
+sodium"
+glucose"
+bloodureanitro"
+
+creatinine2€ç„:event_timestampZ#!../data/feast_offline/lab_resultsŠ1feast.infra.offline_stores.file_source.FileSource¢!../data/feast_offline/lab_results@J“	Šfeast.data_source.PushSource¢push_lab_resultsÒ\event_timestampZ#!../data/feast_offline/lab_results¢!../data/feast_offline/lab_resultsb
+patient_cccd
+õğ¶Ğø°Âyõğ¶Ğø°Ây2ü
+İ
+patient_demographicslos_predictionpatient_cccd"8
+rcount",Sá»‘ láº§n nháº­p viá»‡n trÆ°á»›c (capped 5)"$
+bmi"Chá»‰ sá»‘ khá»‘i cÆ¡ thá»ƒ" 
+pulse"Máº¡ch (nhá»‹p/phÃºt)"!
+respiration"Táº§n sá»‘ thá»Ÿ"9
+secondarydiagnosisnonicd9"Cháº©n Ä‘oÃ¡n phá»¥ (0-10)2€ç„:’event_timestampZ$"../data/feast_offline/demographicsŠ1feast.infra.offline_stores.file_source.FileSource¢"../data/feast_offline/demographics@J–	Šfeast.data_source.PushSource¢push_demographicsÒ^event_timestampZ$"../data/feast_offline/demographics¢"../data/feast_offline/demographicsb
+patient_cccd
+õğ¶Ğø°Âyõğ¶Ğø°Âyb¤	Šfeast.data_source.PushSource¢push_lab_resultsªlos_predictionÒ\event_timestampZ#!../data/feast_offline/lab_results¢!../data/feast_offline/lab_resultsbª	Šfeast.data_source.PushSource¢push_comorbiditiesªlos_predictionÒ`event_timestampZ%#../data/feast_offline/comorbidities¢#../data/feast_offline/comorbiditiesb¥event_timestampZ%#../data/feast_offline/comorbiditiesŠ1feast.infra.offline_stores.file_source.FileSource¢#../data/feast_offline/comorbiditiesªlos_predictionb£event_timestampZ$"../data/feast_offline/demographicsŠ1feast.infra.offline_stores.file_source.FileSource¢"../data/feast_offline/demographicsªlos_predictionb¡event_timestampZ#!../data/feast_offline/lab_resultsŠ1feast.infra.offline_stores.file_source.FileSource¢!../data/feast_offline/lab_resultsªlos_predictionb§	Šfeast.data_source.PushSource¢push_demographicsªlos_predictionÒ^event_timestampZ$"../data/feast_offline/demographics¢"../data/feast_offline/demographicsŠ.
+
+los_prediction
+õğ¶ĞĞô»lõğ¶ĞĞô»l

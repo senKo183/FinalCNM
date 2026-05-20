@@ -129,6 +129,21 @@ REFERENCE_DATA_PATH = BASE_DIR / 'reference_data.csv'
 EVIDENTLY_DRIFT_THRESHOLD_HIGH = config('EVIDENTLY_DRIFT_THRESHOLD_HIGH', default=0.5, cast=float)
 EVIDENTLY_DRIFT_THRESHOLD_MEDIUM = config('EVIDENTLY_DRIFT_THRESHOLD_MEDIUM', default=0.25, cast=float)
 
+# DVC Data Versioning (v2 — Giai đoạn 3)
+DVC_REMOTE_NAME = config('DVC_REMOTE_NAME', default='minio_remote')
+DVC_REMOTE_URL = config('DVC_REMOTE_URL', default='s3://dvc-storage/snapshots')
+DVC_SNAPSHOTS_DIR = BASE_DIR / config('DVC_SNAPSHOTS_DIR', default='data/dvc_snapshots')
+
+# Feast Feature Store (v2 — Giai đoạn 4)
+FEAST_REDIS_URL = config('FEAST_REDIS_URL', default='redis://localhost:6379/1')
+FEAST_STORE_DIR = BASE_DIR / config('FEAST_STORE_DIR', default='feature_store')
+FEAST_REGISTRY_PATH = BASE_DIR / config('FEAST_REGISTRY_PATH', default='data/feast_registry/registry.db')
+
+# FastAPI Inference Service (v2 — Giai đoạn 5)
+FASTAPI_URL = config('FASTAPI_URL', default='http://localhost:8001')
+NGINX_URL = config('NGINX_URL', default='http://localhost')
+GITHUB_REPO_URL = config('GITHUB_REPO_URL', default='https://github.com/senKo183/FinalCNM')
+
 # Make MLflow S3 creds available to boto3 used by mlflow artifact upload
 os.environ.setdefault('MLFLOW_S3_ENDPOINT_URL', MLFLOW_S3_ENDPOINT_URL)
 os.environ.setdefault('AWS_ACCESS_KEY_ID', MLFLOW_AWS_ACCESS_KEY_ID)

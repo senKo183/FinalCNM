@@ -16,3 +16,5 @@ __pycache__/
 
 # OS
 .DS_Store
+/LengthOfStay.csv
+/reference_data.csv

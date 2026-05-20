@@ -22,4 +22,9 @@ app.conf.beat_schedule = {
         'task': 'ml_engine.tasks.run_drift_monitoring',
         'schedule': crontab(hour=2, minute=0, day_of_week=0),
     },
+    # Giai đoạn 4: Feast materialize hàng ngày 05:00 (đồng bộ Redis sau restart)
+    'daily-feast-materialize': {
+        'task': 'ml_engine.tasks.feast_materialize_admitted',
+        'schedule': crontab(hour=5, minute=0),
+    },
 }

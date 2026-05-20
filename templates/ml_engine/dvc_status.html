@@ -1,0 +1,252 @@
+{% extends 'base.html' %}
+
+{% block title %}DVC Data Versioning — LOS Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+  <!-- Header -->
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h2 class="mb-1">
+        <i class="bi bi-database-check me-2 text-success"></i>DVC Data Versioning
+      </h2>
+      <p class="text-muted mb-0">Giai đoạn 3 — Phiên bản dữ liệu tự động, tái tạo lại dataset theo commit</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'ml_engine:versions' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Mô hình ML
+      </a>
+    </div>
+  </div>
+
+  <!-- Action Messages -->
+  {% if action_msg %}
+  <div class="alert alert-{% if action_msg.success %}success{% else %}danger{% endif %} alert-dismissible fade show" role="alert">
+    <i class="bi bi-{% if action_msg.success %}check-circle{% else %}exclamation-triangle{% endif %} me-2"></i>
+    {{ action_msg.text }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endif %}
+
+  <div class="row g-4">
+
+    <!-- DVC Status Card -->
+    <div class="col-lg-5">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-white">
+          <h5 class="card-title mb-0">
+            <i class="bi bi-info-circle me-2 text-primary"></i>Trạng thái DVC
+          </h5>
+        </div>
+        <div class="card-body">
+          {% if dvc_status.initialized %}
+            <div class="d-flex align-items-center mb-3">
+              <span class="badge bg-success fs-6 me-2"><i class="bi bi-check-circle me-1"></i>Đã khởi tạo</span>
+              <small class="text-muted">DVC đang hoạt động trong repo này</small>
+            </div>
+            <table class="table table-sm table-borderless">
+              <tr>
+                <td class="text-muted fw-semibold" style="width:40%">Remote:</td>
+                <td><code class="small">{{ dvc_status.remote_info }}</code></td>
+              </tr>
+              <tr>
+                <td class="text-muted fw-semibold">Snapshot Dir:</td>
+                <td><code class="small text-break">{{ dvc_status.snapshots_dir }}</code></td>
+              </tr>
+              <tr>
+                <td class="text-muted fw-semibold">Số snapshots:</td>
+                <td>
+                  <span class="badge bg-info text-dark">{{ dvc_status.num_snapshots }}</span>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Actions -->
+            <div class="mt-3 d-flex flex-column gap-2">
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="configure_remote">
+                <button type="submit" class="btn btn-outline-warning btn-sm w-100">
+                  <i class="bi bi-gear me-1"></i>Cấu hình lại MinIO Remote
+                </button>
+              </form>
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="track_datasets">
+                <button type="submit" class="btn btn-outline-primary btn-sm w-100">
+                  <i class="bi bi-cloud-upload me-1"></i>Track Dataset Files (CSV → DVC)
+                </button>
+              </form>
+            </div>
+
+          {% else %}
+            <div class="d-flex align-items-center mb-3">
+              <span class="badge bg-danger fs-6 me-2"><i class="bi bi-x-circle me-1"></i>Chưa khởi tạo</span>
+            </div>
+            <div class="alert alert-warning small mb-3">
+              <strong>DVC chưa được init.</strong> Chạy lệnh sau trong terminal:
+              <pre class="mt-2 mb-0 p-2 bg-light rounded"><code>dvc init
+python manage.py shell -c "from ml_engine.dvc_manager import configure_minio_remote; ok,msg=configure_minio_remote(); print(msg)"
+dvc add LengthOfStay.csv reference_data.csv
+dvc push</code></pre>
+            </div>
+            <p class="text-muted small">Xem hướng dẫn chi tiết trong <strong>SETUP_V4.md</strong>.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Snapshot List -->
+    <div class="col-lg-7">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+          <h5 class="card-title mb-0">
+            <i class="bi bi-camera me-2 text-success"></i>Danh sách Snapshots gần nhất
+          </h5>
+          <small class="text-muted">Tự động tạo trước mỗi lần retrain</small>
+        </div>
+        <div class="card-body p-0">
+          {% if dvc_status.snapshots %}
+          <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>#</th>
+                  <th>Tên file</th>
+                  <th>DVC MD5</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for snap in dvc_status.snapshots %}
+                <tr>
+                  <td class="text-muted">{{ forloop.counter }}</td>
+                  <td><code class="small text-break">{{ snap.name }}</code></td>
+                  <td>
+                    {% if snap.dvc_md5 %}
+                    <code class="small text-success">{{ snap.dvc_md5 }}</code>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="text-center py-5 text-muted">
+            <i class="bi bi-camera-slash display-4 mb-3 d-block"></i>
+            <p class="mb-1">Chưa có snapshot nào.</p>
+            <small>Snapshot sẽ được tạo tự động khi trigger retrain với dữ liệu buffer mới.</small>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Model Versions with DVC -->
+  <div class="card shadow-sm mt-4">
+    <div class="card-header bg-white">
+      <h5 class="card-title mb-0">
+        <i class="bi bi-link-45deg me-2 text-info"></i>Model Versions liên kết DVC Snapshot
+      </h5>
+    </div>
+    <div class="card-body p-0">
+      {% if versions_with_dvc %}
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Version</th>
+              <th>Ngày train</th>
+              <th>MAE</th>
+              <th>DVC Snapshot ID</th>
+              <th>DVC MD5</th>
+              <th>Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for v in versions_with_dvc %}
+            <tr>
+              <td><strong>{{ v.version_number }}</strong></td>
+              <td class="text-muted small">{{ v.trained_at_str|default:"—" }}</td>
+              <td>
+                <span class="badge bg-light text-dark border">{{ v.mae|floatformat:4 }}</span>
+              </td>
+              <td>
+                <code class="small text-success text-break" style="max-width:220px;display:inline-block;">
+                  {{ v.dvc_snapshot_id }}
+                </code>
+              </td>
+              <td>
+                {% if v.dvc_md5 %}
+                <code class="small text-muted">{{ v.dvc_md5|truncatechars:16 }}</code>
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if v.is_active %}
+                <span class="badge bg-success">Active</span>
+                {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center py-5 text-muted">
+        <i class="bi bi-link display-4 mb-3 d-block"></i>
+        <p class="mb-1">Chưa có model version nào có DVC snapshot.</p>
+        <small>Trigger retrain để tự động tạo snapshot và liên kết với model version.</small>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Hướng dẫn tái tạo -->
+  <div class="card shadow-sm mt-4">
+    <div class="card-header bg-white">
+      <h5 class="card-title mb-0">
+        <i class="bi bi-arrow-repeat me-2 text-warning"></i>Cách tái tạo dataset (Reproducibility)
+      </h5>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-3">
+        Mỗi lần retrain, DVC chụp snapshot stream_buffer và liên kết với MLflow Run ID. 
+        Để tái tạo dataset của một lần train cụ thể:
+      </p>
+      <ol class="small">
+        <li class="mb-2">
+          Lấy <strong>dvc_snapshot_id</strong> từ bảng trên hoặc từ MLflow Run tags (<code>dvc_snapshot_id</code>).
+        </li>
+        <li class="mb-2">
+          Tìm file <code>.dvc</code> tương ứng trong thư mục <code>data/dvc_snapshots/</code>.
+        </li>
+        <li class="mb-2">
+          Checkout Git commit tại thời điểm đó: <code>git checkout &lt;commit&gt;</code>
+        </li>
+        <li class="mb-2">
+          Pull data từ MinIO: <code>dvc pull</code>
+        </li>
+        <li>
+          Dataset khớp 100% với lần train đó.
+        </li>
+      </ol>
+      <div class="bg-light rounded p-3 mt-3">
+        <pre class="mb-0 small"><code># Ví dụ: tái tạo dataset của lần train v5
+git checkout &lt;commit-hash-v5&gt;
+dvc pull data/dvc_snapshots/
+# Dữ liệu stream_buffer của lần train v5 đã sẵn sàng</code></pre>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

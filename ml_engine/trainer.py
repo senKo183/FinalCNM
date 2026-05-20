@@ -1,4 +1,4 @@
-"""LOS retrain — v2 Giai đoạn 2 Monitoring & Explainability.
+"""LOS retrain — v2 Giai đoạn 3 Data Versioning.
 
 Nâng cấp so với v1:
 - LinearRegression/GradientBoosting → SGDRegressor hỗ trợ partial_fit
@@ -13,6 +13,12 @@ Giai đoạn 2:
 - SHAP LinearExplainer tính global feature importance sau mỗi retrain.
 - SHAP bar chart được log vào MLflow artifact.
 - shap_feature_importance được lưu vào model_versions document.
+
+Giai đoạn 3:
+- DVC snapshot stream_buffer trước mỗi lần train → Parquet file versioned.
+- dvc_snapshot_id được log vào MLflow Run dưới dạng tag.
+- model_versions collection lưu thêm dvc_snapshot_id.
+- stream_buffer docs được update với dvc_snapshot_id sau khi push.
 """
 from __future__ import annotations
 
@@ -32,6 +38,7 @@ from sklearn.pipeline import Pipeline
 
 from PredictLOSWeb.mongodb import get_collection
 
+from .dvc_manager import take_stream_buffer_snapshot
 from .mlflow_config import (
     CHAMPION_ALIAS,
     get_mlflow,
@@ -98,7 +105,7 @@ def _prepare_training_data():
         X_all = X_csv
         y_all = y_csv
 
-    return X_all, y_all, len(buffer_docs), [str(d['_id']) for d in buffer_docs]
+    return X_all, y_all, len(buffer_docs), [str(d['_id']) for d in buffer_docs], buffer_docs
 
 
 def _load_previous_sgd_model() -> Optional[Pipeline]:
@@ -156,8 +163,30 @@ def _train_or_update(X_train, y_train, X_buffer_only, y_buffer_only):
 
 
 def retrain_model():
-    """Retrain pipeline, log MLflow run, tạo version mới."""
-    X, y, new_samples, buffer_ids = _prepare_training_data()
+    """Retrain pipeline, log MLflow run, tạo version mới.
+
+    Giai đoạn 3: DVC snapshot stream_buffer trước khi train.
+    """
+    X, y, new_samples, buffer_ids, buffer_docs = _prepare_training_data()
+
+    # --- DVC snapshot (Giai đoạn 3) ---
+    version_count = get_collection('model_versions').count_documents({})
+    upcoming_version = f'v{version_count + 1}'
+    dvc_snapshot = None
+    if new_samples > 0 and buffer_docs:
+        try:
+            dvc_snapshot = take_stream_buffer_snapshot(
+                buffer_docs, version_label=upcoming_version
+            )
+            if dvc_snapshot:
+                logger.info(
+                    'DVC snapshot: id=%s, records=%d, pushed=%s',
+                    dvc_snapshot['snapshot_id'],
+                    dvc_snapshot['num_records'],
+                    dvc_snapshot['pushed'],
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('DVC snapshot thất bại, tiếp tục retrain: %s', exc)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
@@ -180,8 +209,7 @@ def retrain_model():
     current_active = versions.find_one({'is_active': True})
     current_mae = current_active.get('mae', float('inf')) if current_active else float('inf')
 
-    version_count = versions.count_documents({})
-    new_version = f'v{version_count + 1}'
+    new_version = upcoming_version
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     model_filename = f'model_{new_version}_{timestamp}.pkl'
@@ -194,7 +222,7 @@ def retrain_model():
     # SHAP global explanation
     shap_result = _compute_shap(model, X_train, X_test)
 
-    # Log SHAP + model vào MLflow
+    # Log SHAP + model + DVC snapshot vào MLflow
     mlflow_run_id, mlflow_model_uri, mlflow_version = _log_to_mlflow(
         model=model,
         new_version=new_version,
@@ -206,7 +234,12 @@ def retrain_model():
         train_mode=train_mode,
         is_better=is_better,
         shap_result=shap_result,
+        dvc_snapshot=dvc_snapshot,
     )
+
+    dvc_snapshot_id = dvc_snapshot['snapshot_id'] if dvc_snapshot else None
+    dvc_snapshot_file = dvc_snapshot['snapshot_file'] if dvc_snapshot else None
+    dvc_md5 = dvc_snapshot['dvc_md5'] if dvc_snapshot else None
 
     version_doc = {
         'version_number': new_version,
@@ -226,6 +259,10 @@ def retrain_model():
         'shap_feature_importance': (
             shap_result['feature_importance'] if shap_result else None
         ),
+        # Giai đoạn 3 — DVC Data Versioning
+        'dvc_snapshot_id': dvc_snapshot_id,
+        'dvc_snapshot_file': dvc_snapshot_file,
+        'dvc_md5': dvc_md5,
         'description': (
             f'Retrain với {new_samples} mẫu mới' if new_samples > 0 else 'Retrain thủ công'
         ),
@@ -243,11 +280,14 @@ def retrain_model():
         promote_to_champion(mlflow_version)
 
     if buffer_ids:
-        from bson import ObjectId
+        from bson import ObjectId  # noqa: WPS433
         buffer = get_collection('stream_buffer')
+        update_fields: dict = {'used_for_retrain': True}
+        if dvc_snapshot_id:
+            update_fields['dvc_snapshot_id'] = dvc_snapshot_id
         buffer.update_many(
             {'_id': {'$in': [ObjectId(bid) for bid in buffer_ids]}},
-            {'$set': {'used_for_retrain': True}}
+            {'$set': update_fields}
         )
 
     return {
@@ -265,6 +305,8 @@ def retrain_model():
         'shap_feature_importance': (
             shap_result['feature_importance'] if shap_result else None
         ),
+        'dvc_snapshot_id': dvc_snapshot_id,
+        'dvc_md5': dvc_md5,
     }
 
 
@@ -294,6 +336,7 @@ def _log_to_mlflow(
     train_mode: str,
     is_better: bool,
     shap_result: Optional[dict] = None,
+    dvc_snapshot: Optional[dict] = None,
 ) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Log run + register model. Trả về (run_id, model_uri, registry_version)."""
     mlflow = get_mlflow()
@@ -328,6 +371,13 @@ def _log_to_mlflow(
             })
             mlflow.set_tag('train_mode', train_mode)
             mlflow.set_tag('improved', str(is_better))
+
+            # Log DVC snapshot tags (Giai đoạn 3)
+            if dvc_snapshot:
+                mlflow.set_tag('dvc_snapshot_id', dvc_snapshot.get('snapshot_id', ''))
+                mlflow.set_tag('dvc_md5', dvc_snapshot.get('dvc_md5', ''))
+                mlflow.set_tag('dvc_num_records', str(dvc_snapshot.get('num_records', 0)))
+                mlflow.set_tag('dvc_pushed', str(dvc_snapshot.get('pushed', False)))
 
             # Log SHAP feature importance metrics
             if shap_result and shap_result.get('feature_importance'):

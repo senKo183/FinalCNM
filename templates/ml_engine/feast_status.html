@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+{% block title %}Feast Feature Store{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1"><i class="bi bi-database-gear"></i> Feast Feature Store</h1>
+        <p class="text-muted mb-0">Giai đoạn 4 — Online Store (Redis) cho real-time inference</p>
+    </div>
+</div>
+
+{% if action_msg %}
+<div class="alert alert-{% if action_msg.success %}success{% else %}danger{% endif %} alert-dismissible fade show">
+    {{ action_msg.text }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- Trạng thái -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card {% if feast_status.installed %}border-success{% else %}border-danger{% endif %}">
+            <div class="card-body text-center">
+                <div class="fs-3">{% if feast_status.installed %}✅{% else %}❌{% endif %}</div>
+                <div class="fw-bold">Feast Installed</div>
+                <small class="text-muted">pip install feast[redis]</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card {% if feast_status.applied %}border-success{% else %}border-warning{% endif %}">
+            <div class="card-body text-center">
+                <div class="fs-3">{% if feast_status.applied %}✅{% else %}⚠️{% endif %}</div>
+                <div class="fw-bold">feast apply</div>
+                <small class="text-muted">Registry đã đăng ký</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card {% if feast_status.redis_ok %}border-success{% else %}border-danger{% endif %}">
+            <div class="card-body text-center">
+                <div class="fs-3">{% if feast_status.redis_ok %}✅{% else %}❌{% endif %}</div>
+                <div class="fw-bold">Redis Online Store</div>
+                <small class="text-muted">DB 1 — inference features</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-info">
+            <div class="card-body text-center">
+                <div class="fs-3">{{ feast_status.feature_views|length }}</div>
+                <div class="fw-bold">Feature Views</div>
+                <small class="text-muted">đã đăng ký</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if not feast_status.installed %}
+<div class="alert alert-danger">
+    <h5><i class="bi bi-exclamation-triangle"></i> Feast chưa được cài</h5>
+    <p class="mb-1">Chạy: <code>pip install "feast[redis]>=0.40"</code></p>
+</div>
+{% elif not feast_status.applied %}
+<div class="alert alert-warning">
+    <h5><i class="bi bi-info-circle"></i> Chưa chạy feast apply</h5>
+    <p class="mb-1">Feature Views chưa được đăng ký vào registry. Click nút bên dưới để apply:</p>
+    <form method="post">{% csrf_token %}
+        <input type="hidden" name="action" value="feast_apply">
+        <button type="submit" class="btn btn-warning btn-sm">
+            <i class="bi bi-play-circle"></i> Chạy feast apply ngay
+        </button>
+    </form>
+    <hr>
+    <p class="mb-0 small">
+        Hoặc chạy thủ công từ terminal:<br>
+        <code>cd feature_store && feast apply</code>
+    </p>
+</div>
+{% else %}
+
+<!-- Actions -->
+<div class="card mb-4">
+    <div class="card-header bg-light"><strong><i class="bi bi-lightning"></i> Actions</strong></div>
+    <div class="card-body d-flex gap-2 flex-wrap">
+        <form method="post" class="d-inline">{% csrf_token %}
+            <input type="hidden" name="action" value="feast_apply">
+            <button type="submit" class="btn btn-outline-warning btn-sm">
+                <i class="bi bi-arrow-repeat"></i> Re-apply Feature Definitions
+            </button>
+        </form>
+        <form method="post" class="d-inline">{% csrf_token %}
+            <input type="hidden" name="action" value="feast_materialize">
+            <button type="submit" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-database-up"></i> Materialize admitted patients → Redis
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Feature Views -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-light"><strong><i class="bi bi-table"></i> Registered Feature Views</strong></div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Feature View</th>
+                    <th>Entities</th>
+                    <th>Features</th>
+                    <th>TTL</th>
+                    <th>Online</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for fv in feast_status.feature_views %}
+                <tr>
+                    <td><strong>{{ fv.name }}</strong></td>
+                    <td>{{ fv.entities|join:", " }}</td>
+                    <td>
+                        <small>{{ fv.features|join:", " }}</small>
+                    </td>
+                    <td>{{ fv.ttl_days|default:"∞" }} ngày</td>
+                    <td>{% if fv.online %}<span class="badge bg-success">✓</span>{% else %}<span class="badge bg-secondary">✗</span>{% endif %}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="text-center text-muted py-3">Chưa có Feature View nào. Chạy feast apply trước.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Online Store Info -->
+{% if feast_status.online_store_info %}
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-light"><strong><i class="bi bi-lightning-charge"></i> Redis Online Store</strong></div>
+    <div class="card-body">
+        <table class="table table-sm mb-0">
+            <tr><th style="width:200px">URL</th><td><code>{{ feast_status.online_store_info.url }}</code></td></tr>
+            <tr><th>Database</th><td>DB {{ feast_status.online_store_info.db }}</td></tr>
+            <tr><th>Feature keys</th><td>{{ feast_status.online_store_info.feature_keys }} keys</td></tr>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% endif %}
+
+<!-- Config Paths -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-light"><strong><i class="bi bi-folder"></i> Cấu hình</strong></div>
+    <div class="card-body">
+        <table class="table table-sm mb-0">
+            <tr><th style="width:200px">Feature Store Dir</th><td><code>{{ feast_status.store_dir }}</code></td></tr>
+            <tr><th>Registry Path</th><td><code>{{ feast_status.registry_path }}</code></td></tr>
+        </table>
+    </div>
+</div>
+
+<!-- Hướng dẫn luồng dữ liệu -->
+<div class="alert alert-info">
+    <h6><i class="bi bi-info-circle"></i> Luồng dữ liệu Feast (Giai đoạn 4)</h6>
+    <ol class="mb-0 small">
+        <li><strong>Nhập viện</strong> → Django gọi <code>push_patient_features()</code> → push 3 FeatureViews lên Redis DB 1</li>
+        <li><strong>Inference</strong> → <code>predict_los(features, cccd=cccd)</code> → thử <code>get_online_features(cccd)</code> từ Redis; fallback về MongoDB nếu lỗi</li>
+        <li><strong>Xuất viện / Chỉnh sửa</strong> → tự động push lại features đã cập nhật (rcount tăng, v.v.)</li>
+        <li><strong>Hàng ngày 05:00</strong> → Celery task <code>feast_materialize_admitted</code> đồng bộ lại toàn bộ bệnh nhân admitted (phòng Redis restart)</li>
+    </ol>
+</div>
+
+{% endblock %}

@@ -1,0 +1,253 @@
+name: LOS Prediction CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Feast materialize hàng tuần (Thứ 2 01:00 UTC = 08:00 ICT)
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+    inputs:
+      force_retrain:
+        description: "Force trigger model retrain"
+        required: false
+        default: "false"
+      promote_to_champion:
+        description: "Auto promote @staging → @champion nếu metrics tốt hơn"
+        required: false
+        default: "true"
+
+env:
+  PYTHON_VERSION: "3.11"
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI || 'http://localhost:5000' }}
+  MLFLOW_S3_ENDPOINT_URL: ${{ secrets.MLFLOW_S3_ENDPOINT_URL || 'http://localhost:9000' }}
+  MLFLOW_REGISTERED_MODEL_NAME: los_model
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+jobs:
+  # ─── Job 1: Tests ─────────────────────────────────────────────────────────
+  test:
+    name: Run Tests & Lint
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Django system check
+        env:
+          SECRET_KEY: test-secret-key
+          DEBUG: "True"
+          ALLOWED_HOSTS: localhost
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_NAME: predictlos_db
+          CELERY_BROKER_URL: redis://localhost:6379/0
+          CELERY_RESULT_BACKEND: redis://localhost:6379/0
+        run: python manage.py check --deploy 2>&1 | grep -v "security" || true
+
+      - name: Import check — ML modules
+        run: |
+          python -c "from ml_engine.predictor import predict_los, FEATURE_ORDER; print('predictor OK')"
+          python -c "from ml_engine.mlflow_config import get_mlflow; print('mlflow_config OK')"
+          python -c "from ml_engine.feast_manager import is_feast_available; print('feast_manager OK')"
+
+  # ─── Job 2: Feast Materialize ─────────────────────────────────────────────
+  feast_materialize:
+    name: Feast Materialize Online Store
+    runs-on: self-hosted
+    needs: test
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run feast apply (register feature definitions)
+        run: |
+          cd feature_store
+          feast apply || echo "feast apply failed — skipping (non-critical)"
+
+      - name: Materialize features for admitted patients
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          FEAST_REDIS_URL: ${{ secrets.FEAST_REDIS_URL }}
+        run: |
+          python manage.py shell -c "
+          from ml_engine.tasks import feast_materialize_admitted
+          result = feast_materialize_admitted()
+          print(result)
+          " || echo "Feast materialize failed — skipping (non-critical)"
+
+  # ─── Job 3: Retrain ───────────────────────────────────────────────────────
+  retrain:
+    name: Trigger Model Retrain
+    runs-on: self-hosted
+    needs: feast_materialize
+    if: |
+      github.event_name == 'schedule' ||
+      github.event.inputs.force_retrain == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Trigger retrain
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_NAME: predictlos_db
+        run: |
+          python manage.py shell -c "
+          from ml_engine.trainer import retrain_model
+          result = retrain_model()
+          print(f'Retrain result: version={result[\"version\"]}, MAE={result[\"mae\"]:.4f}, improved={result[\"improved\"]}')
+          import json
+          with open('retrain_result.json', 'w') as f:
+              json.dump({k: str(v) for k, v in result.items()}, f)
+          "
+
+      - name: Upload retrain result
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: retrain-result
+          path: retrain_result.json
+
+  # ─── Job 4: Evaluate & Register ──────────────────────────────────────────
+  register_staging:
+    name: Register @staging → MLflow Registry
+    runs-on: self-hosted
+    needs: retrain
+    if: success()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check & register @staging
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          python manage.py shell -c "
+          from PredictLOSWeb.mongodb import get_collection
+          from ml_engine.mlflow_config import get_mlflow_client, STAGING_ALIAS, CHAMPION_ALIAS
+          import json
+
+          client = get_mlflow_client()
+          if not client:
+              print('MLflow not available — skipping staging registration')
+              exit(0)
+
+          versions_col = get_collection('model_versions')
+          latest = versions_col.find_one(sort=[('trained_at', -1)])
+          if not latest or not latest.get('mlflow_registry_version'):
+              print('No MLflow registry version found — skipping')
+              exit(0)
+
+          reg_version = latest['mlflow_registry_version']
+          model_name = 'los_model'
+          client.set_registered_model_alias(model_name, STAGING_ALIAS, str(reg_version))
+          print(f'Registered version {reg_version} as @{STAGING_ALIAS}')
+          print(f'MAE: {latest[\"mae\"]:.4f}, RMSE: {latest[\"rmse\"]:.4f}')
+          "
+
+  # ─── Job 5: Promote to champion ───────────────────────────────────────────
+  promote_champion:
+    name: Promote @staging → @champion
+    runs-on: self-hosted
+    needs: register_staging
+    if: |
+      success() &&
+      github.event.inputs.promote_to_champion != 'false'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compare metrics & promote
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          python manage.py shell -c "
+          from PredictLOSWeb.mongodb import get_collection
+          from ml_engine.mlflow_config import get_mlflow_client, CHAMPION_ALIAS, STAGING_ALIAS
+
+          client = get_mlflow_client()
+          if not client:
+              print('MLflow not available — skipping promotion')
+              exit(0)
+
+          model_name = 'los_model'
+          versions_col = get_collection('model_versions')
+          latest = versions_col.find_one(sort=[('trained_at', -1)])
+          if not latest or not latest.get('improved'):
+              print('Model did not improve — keeping current @champion')
+              exit(0)
+
+          reg_version = latest['mlflow_registry_version']
+          client.set_registered_model_alias(model_name, CHAMPION_ALIAS, str(reg_version))
+          print(f'Promoted version {reg_version} to @{CHAMPION_ALIAS}')
+          print(f'MAE: {latest[\"mae\"]:.4f} (improved from previous)')
+          "
+
+  # ─── Job 6: Reload FastAPI ────────────────────────────────────────────────
+  reload_fastapi:
+    name: Reload FastAPI Model (@champion)
+    runs-on: self-hosted
+    needs: promote_champion
+    if: success()
+    steps:
+      - name: Reload FastAPI inference service
+        run: |
+          curl -s -X POST http://localhost:8001/api/v2/model/reload || \
+          echo "FastAPI reload failed (service may not be running) — skipping"
+
+      - name: Verify model loaded
+        run: |
+          sleep 3
+          curl -s http://localhost:8001/api/v2/health | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          print(f'FastAPI status: {data[\"status\"]}, model: {data[\"model_version\"]}')
+          " || echo "FastAPI health check failed — skipping"

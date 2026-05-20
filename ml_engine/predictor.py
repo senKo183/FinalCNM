@@ -142,7 +142,36 @@ def preprocess_features(raw_features):
     return processed
 
 
-def predict_los(raw_features):
+def _enrich_with_feast(cccd: str, raw_features: dict) -> tuple[dict, bool]:
+    """Thử lấy features từ Feast Online Store; merge vào raw_features.
+
+    Trả về (merged_features, feast_used).
+    Nếu Feast không khả dụng hoặc không tìm thấy entity → trả nguyên raw_features.
+    """
+    if not cccd:
+        return raw_features, False
+
+    try:
+        from .feast_manager import get_online_features  # noqa: WPS433
+        feast_data = get_online_features(cccd)
+        if feast_data:
+            merged = dict(raw_features)
+            for k, v in feast_data.items():
+                if v is not None:
+                    merged[k] = v
+            return merged, True
+    except Exception as exc:  # noqa: BLE001
+        logger.debug('Feast feature enrichment lỗi: %s', exc)
+
+    return raw_features, False
+
+
+def predict_los(raw_features, cccd: str = None):
+    """Dự đoán LOS.
+
+    v2 Giai đoạn 4: ưu tiên lấy features từ Feast Online Store (Redis),
+    fallback về raw_features nếu Feast không sẵn sàng.
+    """
     model, version = _get_active_model()
 
     if model is None:
@@ -152,7 +181,8 @@ def predict_los(raw_features):
             'error': 'Không tìm thấy mô hình ML',
         }
 
-    processed = preprocess_features(raw_features)
+    features, feast_used = _enrich_with_feast(cccd, raw_features)
+    processed = preprocess_features(features)
 
     feature_vector = [processed.get(f, 0) for f in FEATURE_ORDER]
     X = pd.DataFrame([feature_vector], columns=FEATURE_ORDER)
@@ -164,6 +194,7 @@ def predict_los(raw_features):
         'predicted_los': predicted_los,
         'model_version': version,
         'model_source': _model_source,
+        'feast_used': feast_used,
     }
 
 

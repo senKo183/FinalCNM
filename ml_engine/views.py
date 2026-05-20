@@ -279,6 +279,140 @@ def model_explanation_view(request):
 
 @login_required
 @admin_required
+def dvc_status_view(request):
+    """Dashboard DVC Data Versioning — Giai đoạn 3.
+
+    Hiển thị trạng thái DVC, danh sách snapshot gần nhất,
+    và các model version có liên kết dvc_snapshot_id.
+    """
+    from .dvc_manager import configure_minio_remote, get_dvc_status
+
+    # Xử lý action
+    action_msg = None
+    if request.method == 'POST':
+        action = request.POST.get('action', '')
+        if action == 'configure_remote':
+            ok, msg = configure_minio_remote()
+            action_msg = {'success': ok, 'text': msg}
+        elif action == 'track_datasets':
+            from .tasks import run_dataset_dvc_track
+            run_dataset_dvc_track.delay()
+            action_msg = {'success': True, 'text': 'Task track dataset đã được gửi vào Celery queue.'}
+
+    dvc_status = get_dvc_status()
+
+    # Lấy các model version có DVC snapshot
+    versions_col = get_collection('model_versions')
+    versions_with_dvc = list(
+        versions_col.find(
+            {'dvc_snapshot_id': {'$exists': True, '$ne': None}},
+            sort=[('trained_at', -1)],
+        ).limit(10)
+    )
+    for v in versions_with_dvc:
+        v['_id_str'] = str(v['_id'])
+        if v.get('trained_at'):
+            v['trained_at_str'] = v['trained_at'].strftime('%d/%m/%Y %H:%M')
+
+    return render(request, 'ml_engine/dvc_status.html', {
+        'dvc_status': dvc_status,
+        'versions_with_dvc': versions_with_dvc,
+        'action_msg': action_msg,
+    })
+
+
+@login_required
+@admin_required
+def fastapi_status_view(request):
+    """Admin dashboard — FastAPI Inference Service (Giai đoạn 5)."""
+    import urllib.request
+    import json as json_lib
+
+    fastapi_url = getattr(settings, 'FASTAPI_URL', 'http://localhost:8001')
+    health_data = None
+    model_info = None
+    error_msg = None
+
+    try:
+        with urllib.request.urlopen(f'{fastapi_url}/api/v2/health', timeout=3) as resp:
+            health_data = json_lib.loads(resp.read().decode())
+    except Exception as exc:
+        error_msg = str(exc)
+
+    if health_data:
+        try:
+            with urllib.request.urlopen(f'{fastapi_url}/api/v2/model/info', timeout=3) as resp:
+                model_info = json_lib.loads(resp.read().decode())
+        except Exception:
+            pass
+
+    if request.method == 'POST' and request.POST.get('action') == 'reload_model':
+        try:
+            req = urllib.request.Request(
+                f'{fastapi_url}/api/v2/model/reload',
+                method='POST',
+                headers={'Content-Type': 'application/json'},
+                data=b'{}',
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                reload_result = json_lib.loads(resp.read().decode())
+                messages.success(
+                    request,
+                    f'FastAPI đã reload model: {reload_result.get("model_version", "?")} '
+                    f'({reload_result.get("model_source", "?")})'
+                )
+        except Exception as exc:
+            messages.error(request, f'FastAPI reload thất bại: {exc}')
+        return redirect('ml_engine:fastapi_status')
+
+    return render(request, 'ml_engine/fastapi_status.html', {
+        'fastapi_url': fastapi_url,
+        'health_data': health_data,
+        'model_info': model_info,
+        'error_msg': error_msg,
+        'nginx_url': getattr(settings, 'NGINX_URL', 'http://localhost'),
+        'github_repo': getattr(settings, 'GITHUB_REPO_URL', '#'),
+    })
+
+
+@login_required
+@admin_required
+def feast_status_view(request):
+    """Admin dashboard — Feast Feature Store (Giai đoạn 4)."""
+    from .feast_manager import feast_apply, get_feast_status, materialize_from_parquet
+
+    action_msg = None
+    if request.method == 'POST':
+        action = request.POST.get('action', '')
+        if action == 'feast_apply':
+            ok, msg = feast_apply()
+            action_msg = {'success': ok, 'text': f'feast apply: {msg}'}
+        elif action == 'feast_materialize':
+            from .tasks import feast_materialize_admitted
+            try:
+                feast_materialize_admitted.delay()
+                action_msg = {'success': True, 'text': 'Task feast materialize đã gửi vào queue Celery.'}
+            except Exception:
+                result = feast_materialize_admitted()
+                action_msg = {'success': True, 'text': result}
+
+    feast_status = get_feast_status()
+
+    # Lấy các model version gần nhất để hiển thị feast_used
+    versions_col = get_collection('model_versions')
+    recent_versions = list(versions_col.find().sort('trained_at', -1).limit(5))
+    for v in recent_versions:
+        v['_id_str'] = str(v['_id'])
+
+    return render(request, 'ml_engine/feast_status.html', {
+        'feast_status': feast_status,
+        'recent_versions': recent_versions,
+        'action_msg': action_msg,
+    })
+
+
+@login_required
+@admin_required
 def drift_api_view(request):
     """API endpoint: GET /ml/drift/api/?format=json|html
 
