@@ -140,7 +140,8 @@
     - ✅ Feast: 3 Feature Views, Redis DB 1 online
     - ✅ FastAPI: service healthy, Swagger UI tại `/api/v2/docs`, health endpoint trả status OK
     - ✅ Celery worker: connected Redis, 6 tasks registered
-    - ⚠️ Nginx+FastAPI Docker: Docker Hub auth issue với nginx:1.27-alpine image — FastAPI chạy local thay thế
+    - ⚠️ Nginx+FastAPI Docker: Docker Hub auth issue với nginx:1.27-alpine image — FastAPI chạy local bằng uvicorn thay thế
+  - ✅ Push GitHub thành công sau khi xóa token khỏi .env và rewrite commit history (force-with-lease)
 - **File thay đổi:** fastapi_service/main.py (fix startup), feature_store/features.py (fix paths), ml_engine/feast_manager.py (fix feast apply path), PROGRESS.md, .dvc/config (mới), .dvcignore (mới), LengthOfStay.csv.dvc (mới), reference_data.csv.dvc (mới), data/feast_offline/ (mới), data/dvc_snapshots/ (mới)
 - **Lưu ý:**
   - Docker Hub auth issue trên mạng nội bộ: `nginx:1.27-alpine` không pull được → FastAPI chạy bằng `uvicorn` local thay Docker
